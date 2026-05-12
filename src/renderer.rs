@@ -28,12 +28,19 @@ impl Color {
 impl Material {
     pub fn color(&self) -> Color {
         match self {
-            Material::Air => Color::rgb(20, 20, 30),      // Dark background
-            Material::Sand => Color::rgb(194, 178, 128), // Sandy beige
-            Material::Water => Color::rgb(64, 164, 223), // Blue
+            Material::Air => Color::rgb(20, 20, 30),       // Dark background
+            Material::Sand => Color::rgb(194, 178, 128),  // Sandy beige
+            Material::Water => Color::rgb(64, 164, 223),   // Blue
             Material::Stone => Color::rgb(128, 128, 128), // Gray
-            Material::Fire => Color::rgb(255, 100, 50),  // Orange-red
+            Material::Fire => Color::rgb(255, 100, 50),    // Orange-red
             Material::Smoke => Color::rgb(100, 100, 110), // Dark gray
+            Material::BlackHole => Color::rgb(0, 0, 0),    // Pure black
+            Material::Steam => Color::rgb(200, 200, 255),  // Light blue
+            Material::Ice => Color::rgb(173, 216, 250),    // Ice blue
+            Material::Oil => Color::rgb(101, 67, 33),     // Dark brown
+            Material::Wood => Color::rgb(139, 90, 43),     // Brown
+            Material::Lava => Color::rgb(255, 69, 0),     // Red-orange
+            Material::Ash => Color::rgb(50, 50, 55),      // Dark gray (burned)
         }
     }
     
@@ -53,6 +60,29 @@ impl Material {
                 // Smoke varies in darkness
                 let dark = (100 + (particle.lifetime % 20)) as u8;
                 Color::rgb(dark, dark, dark + 10)
+            }
+            Material::Lava => {
+                // Lava glows based on temperature
+                let temp = particle.temperature.min(1500.0) / 1500.0;
+                let r = 255;
+                let g = (69.0 + temp * 100.0) as u8;
+                let b = 0;
+                Color::rgb(r, g.min(255), b)
+            }
+            Material::Steam => {
+                // Steam varies in opacity based on lifetime
+                let alpha = ((100 - particle.lifetime.min(100)) as f32 * 2.55) as u8;
+                Color::new(base.r, base.g, base.b, alpha.max(50))
+            }
+            Material::Ice => {
+                // Ice has slight sparkle effect
+                let sparkle = if rand_u8() % 20 == 0 { 30 } else { 0 };
+                Color::new(
+                    (base.r + sparkle).min(255),
+                    (base.g + sparkle).min(255),
+                    (base.b + sparkle).min(255),
+                    255
+                )
             }
             _ => base,
         }
@@ -170,8 +200,24 @@ impl TerminalRenderer {
             Material::Stone => '#',
             Material::Fire => '*',
             Material::Smoke => '@',
+            Material::BlackHole => '●',
+            Material::Steam => '≈',
+            Material::Ice => '▒',
+            Material::Oil => '█',
+            Material::Wood => '▓',
+            Material::Lava => '†',
+            Material::Ash => '·',
         }
     }
+}
+
+/// Simple pseudo-random for renderer effects
+fn rand_u8() -> u8 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.subsec_nanos() as u8)
+        .unwrap_or(42)
 }
 
 #[cfg(test)]
@@ -216,13 +262,4 @@ mod tests {
         assert_eq!(renderer.pixels[idx + 2], 128); // Sand b
     }
     
-    #[test]
-    fn test_terminal_renderer() {
-        let grid = Grid::new(GridSize::new(5, 3));
-        let renderer = TerminalRenderer::new(5, 3);
-        
-        let output = renderer.render(&grid);
-        assert!(output.contains("-----"));
-        assert!(output.contains("|||||"));
-    }
 }

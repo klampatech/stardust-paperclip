@@ -200,8 +200,16 @@ impl ChunkedGrid {
     
     /// Spawn particle if cell is empty
     pub fn spawn(&mut self, x: usize, y: usize, material: Material) -> bool {
-        if self.is_empty(x, y) {
-            self.set(x, y, Particle::new(material))
+        if !self.size.contains(x, y) {
+            return false;
+        }
+        
+        let local = ChunkLocalPos::from_world(x, y);
+        let chunk = self.get_chunk_mut(local.chunk);
+        
+        // Only spawn if empty
+        if chunk.is_empty_local(local.lx, local.ly) {
+            chunk.set_local(local.lx, local.ly, Particle::new(material))
         } else {
             false
         }

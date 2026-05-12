@@ -4,11 +4,22 @@
 //! 
 //! # Features
 //! - Spatial partitioning with 64x64 chunks for 50,000+ particle support
-//! - 6 material types with distinct physics behaviors
-//! - Temperature system for heat simulation
-//! - Fire spread and water extinguishing mechanics
+//! - 12 material types with distinct physics behaviors
+//! - Temperature system for heat simulation and phase changes
+//! - Fire spread, lava heating, and material interactions
 //! - Canvas2D rendering pipeline
 //! - WebAssembly support via wasm-bindgen
+//! 
+//! # Materials (12)
+//! - **Fluids**: Sand, Water, Oil, Ice (fall with gravity)
+//! - **Risers**: Fire, Smoke, Steam (rise upward)
+//! - **Solids**: Stone, Wood (static, immovable)
+//! - **Special**: BlackHole (gravity well), Lava (hot, flows slowly)
+//! 
+//! # Temperature System
+//! - Ice melts → Water when heated (T > 273K)
+//! - Water boils → Steam when heated (T > 373K)
+//! - Lava cools → Stone when not near heat sources
 //! 
 //! # Example
 //! ```rust,ignore
@@ -16,6 +27,7 @@
 //! 
 //! let mut grid = Grid::new(GridSize::new(100, 100));
 //! grid.spawn(50, 50, Material::Sand);
+//! grid.spawn(50, 10, Material::Lava); // Heats nearby materials
 //! 
 //! let mut sim = Simulator::new();
 //! sim.tick(&mut grid);
@@ -24,7 +36,7 @@
 // Re-export public API
 pub use crate::grid::Grid;
 pub use crate::grid::GridSize;
-pub use crate::particle::{Material, Particle, ParticleFlags};
+pub use crate::particle::{Material, Particle, ParticleFlags, BlackHoleProps};
 pub use crate::chunk::{Chunk, ChunkedGrid, ChunkPos, CHUNK_SIZE};
 pub use crate::simulation::Simulator;
 pub use crate::renderer::{Renderer, TerminalRenderer, Color};

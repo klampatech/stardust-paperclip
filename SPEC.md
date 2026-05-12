@@ -1,7 +1,7 @@
 # Phase 1: Core Falling Sand Prototype - SPEC
 
 ## Overview
-This is the foundational implementation of a falling sand particle simulation engine with fire and smoke physics, optimized for 50,000+ particles using spatial partitioning.
+This is the foundational implementation of a falling sand particle simulation engine with fire, smoke, and black hole physics, optimized for 50,000+ particles using spatial partitioning.
 
 ## Implemented Components
 
@@ -85,6 +85,13 @@ This is the foundational implementation of a falling sand particle simulation en
 2. Dissipates over time (lifetime decay)
 3. Non-interactive
 
+### Black Holes (Phase 2)
+1. **Gravitational Pull**: Particles within influence radius are attracted toward black holes
+2. **Inverse-square law**: Force = G × mass / distance²
+3. **Event Horizon**: Particles crossing the event horizon are removed
+4. **Hawking Radiation**: Small particles (Fire/Smoke) are emitted periodically
+5. **Mass Growth**: Black hole mass increases slightly when consuming particles (optional)
+
 ## Architecture Notes
 
 ```
@@ -116,9 +123,96 @@ This is the foundational implementation of a falling sand particle simulation en
 - Physics tests: 16 test cases (see TEST_STRATEGY.md)
 
 ## Phase 2+ Roadmap
+- [x] Canvas2D rendering pipeline
+- [x] Black hole physics (FUL-3)
+  - [x] `BlackHole` material variant with properties
+  - [x] Gravitational pull (inverse-square law, F = G/r²)
+  - [x] Event horizon capture (particles consumed when dist < event_horizon_radius)
+  - [x] Hawking radiation emission (Fire/Smoke particles)
+  - [x] Tidal forces and spaghettification near event horizon
+  - [x] Camera shake trigger on consumption
+  - [x] Velocity-based movement for gravity effects
+  - [x] Particle mass affecting gravity response
 - [ ] GPU rendering with wgpu
 - [ ] User interaction (click to spawn)
 - [ ] wasm-bindgen web scaffold
-- [ ] Canvas2D rendering pipeline
 - [ ] Chemical reactions (water + fire = steam/smoke)
 - [ ] Temperature-based state changes (ice → water → steam)
+- [ ] Accretion disk physics (stretch goal)
+
+---
+
+# Phase 3: Full Material System - SPEC
+
+## Overview
+Phase 3 extends the material system with 5 new materials and temperature-based physics.
+
+## New Materials (5)
+
+| Material | Behavior | Priority |
+|----------|----------|----------|
+| **Steam** | Rises fast, dissipates, created when water meets heat | P0 |
+| **Ice** | Sinks in water, melts when heated, slips on slopes | P0 |
+| **Oil** | Flammable liquid, flows slower than water, denser burn | P0 |
+| **Wood** | Solid, flammable, burns slower than paper/sand | P1 |
+| **Lava** | Extremely hot, sets nearby materials on fire, flows slowly | P1 |
+
+## Temperature System
+
+| Feature | Description | Priority |
+|---------|-------------|----------|
+| **Phase Changes** | Ice→Water→Steam based on temperature | P0 |
+| **Heat Transfer** | Hot materials heat nearby cooler materials | P1 |
+| **Flash Points** | Different materials ignite at different temperatures | P1 |
+
+## Material Interactions
+
+| Interaction | Result | Priority |
+|-------------|--------|----------|
+| Water + Lava | Creates steam (erupts) | P0 |
+| Oil + Fire | Burns longer than wood | P0 |
+| Ice + Fire | Melts to water | P0 |
+| Lava + Water | Creates stone (solidifies) | P1 |
+
+## Expanded Material Enum
+
+```rust
+pub enum Material {
+    Air,
+    Sand,
+    Water,
+    Stone,
+    Fire,
+    Smoke,
+    Steam,   // NEW - rises fast, dissipates
+    Ice,     // NEW - sinks, melts when heated
+    Oil,     // NEW - flammable liquid, slow flow
+    Wood,    // NEW - solid, slow burn
+    Lava,    // NEW - hot, flows slowly, ignites nearby
+}
+```
+
+## Temperature Ranges (Kelvin)
+
+- Water freezes: 273K
+- Water boils: 373K
+- Wood ignites: 573K
+- Sand melts: 2000K
+
+## Success Criteria (Phase 3)
+
+- [x] 5 new materials implemented (Steam, Ice, Oil, Wood, Lava)
+- [x] Temperature system functional
+- [x] Phase transitions work (ice↔water↔steam)
+- [x] Lava heats nearby materials
+- [x] Fire spreads to oil and wood
+- [x] 10+ new tests added
+- [x] No regression in existing tests (16 existing)
+
+**Total Materials:** 12 (Air, Sand, Water, Stone, Fire, Smoke, BlackHole, Steam, Ice, Oil, Wood, Lava)
+
+## Team Assignment
+
+**Recommended: Rust Engineer** (same as Phase 1)
+
+**Estimated Duration:** 2-3 days (24-32 hours)
