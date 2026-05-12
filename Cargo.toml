@@ -1,0 +1,31 @@
+[package]
+name = "falling_sand"
+version = "0.1.0"
+edition = "2021"
+description = "High-performance falling sand particle simulation"
+authors = ["Fullstack Forge"]
+license = "MIT"
+repository = "https://github.com/fullstack-forge/falling-sand"
+
+[lib]
+crate-type = ["lib", "cdylib", "rlib"]
+
+[features]
+default = []
+wasm = ["wasm-bindgen", "js-sys"]
+
+[dependencies]
+# WASM support (optional)
+wasm-bindgen = { version = "0.2", optional = true }
+js-sys = { version = "0.3", optional = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# Native-only dependencies can go here
+
+[dev-dependencies]
+
+[[example]]
+name = "demo"
+path = "examples/demo.rs"
+
+
