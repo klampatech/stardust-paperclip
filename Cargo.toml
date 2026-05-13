@@ -1,0 +1,40 @@
+[package]
+name = "falling_sand"
+version = "0.1.0"
+edition = "2021"
+description = "High-performance falling sand particle simulation"
+authors = ["Fullstack Forge"]
+license = "MIT"
+repository = "https://github.com/fullstack-forge/falling-sand"
+
+[lib]
+crate-type = ["lib", "cdylib", "rlib"]
+
+[features]
+default = []
+wasm = ["wasm-bindgen", "js-sys"]
+gpu = ["wgpu", "bytemuck", "tokio"]
+
+[dependencies]
+# WASM support (optional)
+wasm-bindgen = { version = "0.2", optional = true }
+js-sys = { version = "0.3", optional = true }
+# GPU support (optional)
+wgpu = { version = "0.17", optional = true }
+bytemuck = { version = "1.14", optional = true }
+tokio = { version = "1", optional = true, features = ["rt"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# Native-only dependencies can go here
+
+[dev-dependencies]
+
+[[example]]
+name = "demo"
+path = "examples/demo.rs"
+
+[[example]]
+name = "gpu_demo"
+path = "examples/gpu_demo.rs"
+
+

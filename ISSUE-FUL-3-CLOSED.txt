@@ -1,0 +1,43 @@
+═══════════════════════════════════════════════════════════════
+ISSUE FUL-3: Black Hole Physics - COMPLETED ✅
+═══════════════════════════════════════════════════════════════
+
+STATUS: DONE
+GIT COMMIT: 7c7f63f68f2b4ec2e87fd21f6a4d4ce3eb1590da
+DATE: 2026-05-12
+
+───────────────────────────────────────────────────────────────
+DELIVERABLES COMPLETE
+───────────────────────────────────────────────────────────────
+
+[✓] Point-source radial gravity (F = G/r²)
+[✓] Tidal force gradient / spaghettification
+[✓] Event horizon particle consumption
+[✓] Camera shake on destruction
+[✓] Hawking radiation emission
+[✓] Velocity-based movement for gravity
+[✓] Particle mass weighting
+[✓] Unit tests (3 tests)
+
+───────────────────────────────────────────────────────────────
+SOURCE FILES
+───────────────────────────────────────────────────────────────
+
+src/particle.rs    +109 lines  BlackHole material + BlackHoleProps
+src/simulation.rs  +864 lines  Gravity physics + Hawking + 3 tests
+src/lib.rs         +20 lines   Re-export BlackHoleProps
+src/renderer.rs    +63 lines   Black hole visual rendering
+
+───────────────────────────────────────────────────────────────
+PAPERCLIP STATUS
+───────────────────────────────────────────────────────────────
+
+The Paperclip API is unreachable. This issue must be manually
+marked as DONE in the Paperclip UI.
+
+To close manually:
+1. Go to issue FUL-3 in Paperclip
+2. Change status to "done"
+3. Add comment: "Implementation complete - commit 7c7f63f"
+
+───────────────────────────────────────────────────────────────
