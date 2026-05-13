@@ -84,6 +84,8 @@ function getParticleColor(particle: Particle, x: number, y: number): [number, nu
   return [r, g, b, a];
 }
 
+export type OverlayMode = 'none' | 'temperature' | 'velocity';
+
 export class SimulationCanvas {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
@@ -92,6 +94,7 @@ export class SimulationCanvas {
   private scale: number;
   private grid: Grid;
   private imageData: ImageData;
+  private overlayMode: OverlayMode = 'none';
   
   // Black hole tracking for gameplay metrics
   private blackHoles: Array<{ x: number; y: number; mass: number; consumed: number }> = [];
@@ -692,7 +695,24 @@ export class SimulationCanvas {
         const particle = particles[y * width + x];
         if (particle.material === Material.Air) continue;
 
-        const [r, g, b, a] = getParticleColor(particle, x, y);
+        let [r, g, b, a] = getParticleColor(particle, x, y);
+
+        // Apply overlays
+        if (this.overlayMode === 'temperature') {
+          const temp = particle.temperature;
+          // Blue (cold) to red (hot) gradient
+          const normalized = Math.max(0, Math.min(1, (temp - 200) / 1500));
+          r = Math.floor(r * (1 - normalized * 0.5) + 255 * normalized * 0.5);
+          b = Math.floor(b * (1 - normalized * 0.5) + 0 * normalized * 0.5);
+          g = Math.floor(g * (1 - normalized * 0.5) + 100 * normalized * 0.5);
+        } else if (this.overlayMode === 'velocity') {
+          const vel = Math.sqrt(particle.velocityX ** 2 + particle.velocityY ** 2);
+          const normalized = Math.min(1, vel / 5); // Max velocity is 5
+          // Green to red based on speed
+          r = Math.floor(r * (1 - normalized * 0.5) + 255 * normalized * 0.5);
+          g = Math.floor(g * (1 - normalized * 0.7) + 0 * normalized * 0.7);
+          b = Math.floor(b * (1 - normalized * 0.5) + 0 * normalized * 0.5);
+        }
 
         // Fill scaled block
         for (let dy = 0; dy < scale; dy++) {
@@ -758,6 +778,34 @@ export class SimulationCanvas {
       particlesConsumed: this.stats.particlesConsumed,
       totalMass: this.stats.totalMass,
       blackHoles: this.blackHoles.length
+    };
+  }
+  
+  // Set overlay mode
+  setOverlayMode(mode: OverlayMode): void {
+    this.overlayMode = mode;
+  }
+  
+  getOverlayMode(): OverlayMode {
+    return this.overlayMode;
+  }
+  
+  // Get particle at position (for pick tool)
+  getMaterialAt(x: number, y: number): Material | null {
+    const gridX = Math.floor(x / this.scale);
+    const gridY = Math.floor(y / this.scale);
+    const particle = this.get(gridX, gridY);
+    return particle?.material ?? null;
+  }
+  
+  // Get velocity at position for visualization
+  getVelocityAt(x: number, y: number): { vx: number; vy: number } {
+    const gridX = Math.floor(x / this.scale);
+    const gridY = Math.floor(y / this.scale);
+    const particle = this.get(gridX, gridY);
+    return { 
+      vx: particle?.velocityX ?? 0, 
+      vy: particle?.velocityY ?? 0 
     };
   }
   

@@ -37,10 +37,12 @@
 pub use crate::grid::Grid;
 pub use crate::grid::GridSize;
 pub use crate::particle::{Material, Particle, ParticleFlags, BlackHoleProps};
-pub use crate::chunk::{Chunk, ChunkedGrid, ChunkPos, CHUNK_SIZE};
+pub use crate::chunk::{Chunk, ChunkedGrid, ChunkPos, SpatialHash, GridSpatialHash, SpatialHashTrait, CHUNK_SIZE};
+pub use crate::gpu::{encode_material, decode_material, encode_grid, GpuSimulator, GpuStatus};
 pub use crate::simulation::Simulator;
 pub use crate::renderer::{Renderer, TerminalRenderer, Color};
 pub use crate::postprocessing::{PostProcessor, PostProcessingConfig, ColorGradingMode, ScreenShake};
+pub use crate::benchmark::{SpatialBenchmark, SpatialBenchmarkConfig, BenchmarkResult, run_spatial_benchmark};
 
 // GPU compute pipeline (optional feature)
 #[cfg(feature = "gpu")]
@@ -48,6 +50,7 @@ pub mod gpu;
 
 // Internal modules
 mod grid;
+mod benchmark;
 mod particle;
 mod chunk;
 mod simulation;

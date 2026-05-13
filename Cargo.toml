@@ -13,7 +13,7 @@ crate-type = ["lib", "cdylib", "rlib"]
 [features]
 default = []
 wasm = ["wasm-bindgen", "js-sys"]
-gpu = ["wgpu"]
+gpu = ["wgpu", "bytemuck", "tokio"]
 
 [dependencies]
 # WASM support (optional)
@@ -21,6 +21,8 @@ wasm-bindgen = { version = "0.2", optional = true }
 js-sys = { version = "0.3", optional = true }
 # GPU support (optional)
 wgpu = { version = "0.17", optional = true }
+bytemuck = { version = "1.14", optional = true }
+tokio = { version = "1", optional = true, features = ["rt"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 # Native-only dependencies can go here

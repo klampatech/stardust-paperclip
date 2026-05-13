@@ -1,13 +1,16 @@
 // Particle Simulation Compute Shader
-// Falls Sand GPU Compute Pipeline
+// Falling Sand GPU Compute Pipeline - WGSL
 
-// Simulation uniforms
 struct Uniforms {
     width: u32,
     height: u32,
     tick: u32,
     _padding: u32,
 }
+
+@group(0) @binding(0) var<uniform> uniforms: Uniforms;
+@group(0) @binding(1) var<storage, read> particle_buffer: array<u32>;
+@group(0) @binding(2) var<storage, read_write> particle_buffer_out: array<u32>;
 
 // Material enum values (must match Rust side)
 const MATERIAL_AIR: u32 = 0u;
@@ -63,21 +66,22 @@ fn in_bounds(x: i32, y: i32, width: u32, height: u32) -> bool {
 }
 
 // Get material from encoded particle data
-// Encoding: bits 0-4 = material (13 values), bits 5-31 = state flags
 fn get_material(particle: u32) -> u32 {
-    return particle & 0x1Fu; // First 5 bits
+    return particle & 0x1Fu; // First 5 bits for material
 }
 
-// Encode particle data
-fn encode_particle(material: u32, flags: u32) -> u32 {
-    return material | (flags << 5);
+// Set particle in output buffer (atomic-free, single pass)
+fn set_particle(index: u32, material: u32) {
+    particle_buffer_out[index] = material;
 }
 
-// Main compute shader
+// Main compute shader - processes all particles
+// Each workgroup processes 256 particles in parallel
 @compute
+@workgroup_size(256)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-    let width = uniform.width;
-    let height = uniform.height;
+    let width = uniforms.width;
+    let height = uniforms.height;
     let index = global_id.x;
     
     // Check bounds
@@ -89,139 +93,107 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let x = pos.x;
     let y = pos.y;
     
-    // Get current particle
-    let current = particle_buffer[index];
-    let material = get_material(current);
+    // Copy current particle to output
+    var current = particle_buffer[index];
+    var material = get_material(current);
     
-    // Skip immovable materials
+    // Skip immovable materials (copy as-is)
     if (!can_move(material)) {
+        set_particle(index, current);
         return;
     }
     
-    // Process based on material type
-    var new_x = i32(x);
-    var new_y = i32(y);
-    var should_swap = false;
-    
-    // Materials with gravity (fall down)
+    // Check below for falling materials
     if (has_gravity(material)) {
-        // Check below
-        if (in_bounds(i32(x), i32(y) + 1, width, height)) {
-            let below_idx = get_index(u32(x), u32(y) + 1, width);
+        if (y + 1u < height) {
+            let below_idx = get_index(x, y + 1u, width);
             let below = particle_buffer[below_idx];
             let below_mat = get_material(below);
             
             // Empty below - fall straight down
             if (below_mat == MATERIAL_AIR) {
-                new_y = i32(y) + 1;
-                should_swap = true;
+                set_particle(index, MATERIAL_AIR);
+                set_particle(below_idx, current);
+                return;
             }
-            // Fall diagonally
-            else if (!should_swap) {
-                // Randomize direction for even spread
-                let go_left = (index + uniform.tick) % 2u == 0u;
-                
-                if (go_left && x > 0u) {
-                    let diag_idx = get_index(x - 1u, u32(new_y), width);
-                    let diag = particle_buffer[diag_idx];
-                    if (get_material(diag) == MATERIAL_AIR) {
-                        new_x = i32(x) - 1;
-                        should_swap = true;
-                    }
-                } else if (x + 1u < width) {
-                    let diag_idx = get_index(x + 1u, u32(new_y), width);
-                    let diag = particle_buffer[diag_idx];
-                    if (get_material(diag) == MATERIAL_AIR) {
-                        new_x = i32(x) + 1;
-                        should_swap = true;
-                    }
-                }
-            }
-        }
-    }
-    // Materials that rise (fire, smoke, steam)
-    else if (rises(material)) {
-        // Check above
-        if (in_bounds(i32(x), i32(y) - 1, width, height)) {
-            let above_idx = get_index(u32(x), u32(y) - 1, width);
-            let above = particle_buffer[above_idx];
-            let above_mat = get_material(above);
             
-            // Empty above - rise
-            if (above_mat == MATERIAL_AIR) {
-                new_y = i32(y) - 1;
-                should_swap = true;
-            }
-            // Rise diagonally
-            else if (!should_swap) {
-                let go_left = (index + uniform.tick) % 2u == 0u;
-                
-                if (go_left && x > 0u) {
-                    let diag_idx = get_index(x - 1u, u32(new_y), width);
-                    let diag = particle_buffer[diag_idx];
-                    if (get_material(diag) == MATERIAL_AIR) {
-                        new_x = i32(x) - 1;
-                        should_swap = true;
-                    }
-                } else if (x + 1u < width) {
-                    let diag_idx = get_index(x + 1u, u32(new_y), width);
-                    let diag = particle_buffer[diag_idx];
-                    if (get_material(diag) == MATERIAL_AIR) {
-                        new_x = i32(x) + 1;
-                        should_swap = true;
-                    }
-                }
-            }
-        }
-    }
-    // Water special behavior - also flows horizontally
-    else if (material == MATERIAL_WATER) {
-        // Try to fall
-        if (in_bounds(i32(x), i32(y) + 1, width, height)) {
-            let below_idx = get_index(u32(x), u32(y) + 1, width);
-            if (get_material(particle_buffer[below_idx]) == MATERIAL_AIR) {
-                new_y = i32(y) + 1;
-                should_swap = true;
-            }
-        }
-        // If can't fall, try horizontal flow
-        else if (!should_swap) {
-            let flow_left = (index + uniform.tick) % 2u == 0u;
+            // Try diagonal fall
+            let go_left = (index + uniforms.tick) % 2u == 0u;
             
-            if (flow_left && x > 0u) {
-                let left_idx = get_index(x - 1u, u32(y), width);
-                if (get_material(particle_buffer[left_idx]) == MATERIAL_AIR) {
-                    new_x = i32(x) - 1;
-                    should_swap = true;
+            if (go_left && x > 0u) {
+                let diag_idx = get_index(x - 1u, y + 1u, width);
+                if (get_material(particle_buffer[diag_idx]) == MATERIAL_AIR) {
+                    set_particle(index, MATERIAL_AIR);
+                    set_particle(diag_idx, current);
+                    return;
                 }
             } else if (x + 1u < width) {
-                let right_idx = get_index(x + 1u, u32(y), width);
+                let diag_idx = get_index(x + 1u, y + 1u, width);
+                if (get_material(particle_buffer[diag_idx]) == MATERIAL_AIR) {
+                    set_particle(index, MATERIAL_AIR);
+                    set_particle(diag_idx, current);
+                    return;
+                }
+            }
+        }
+        
+        // Water special: horizontal flow if can't fall
+        if (material == MATERIAL_WATER) {
+            let flow_left = (index + uniforms.tick) % 2u == 0u;
+            
+            if (flow_left && x > 0u) {
+                let left_idx = get_index(x - 1u, y, width);
+                if (get_material(particle_buffer[left_idx]) == MATERIAL_AIR) {
+                    set_particle(index, MATERIAL_AIR);
+                    set_particle(left_idx, current);
+                    return;
+                }
+            } else if (x + 1u < width) {
+                let right_idx = get_index(x + 1u, y, width);
                 if (get_material(particle_buffer[right_idx]) == MATERIAL_AIR) {
-                    new_x = i32(x) + 1;
-                    should_swap = true;
+                    set_particle(index, MATERIAL_AIR);
+                    set_particle(right_idx, current);
+                    return;
                 }
             }
         }
     }
     
-    // Perform swap if needed (atomic to avoid race conditions)
-    // Note: In real implementation, would use atomic operations
-    // This is simplified - actual GPU implementation needs careful synchronization
-    if (should_swap) {
-        let target_idx = get_index(u32(new_x), u32(new_y), width);
-        
-        // Swap in buffer
-        // Would need proper synchronization for real GPU implementation
-        let temp = particle_buffer[target_idx];
-        // particle_buffer[target_idx] = current;
-        // particle_buffer[index] = temp;
+    // Materials that rise (fire, smoke, steam)
+    if (rises(material)) {
+        if (y > 0u) {
+            let above_idx = get_index(x, y - 1u, width);
+            let above = particle_buffer[above_idx];
+            let above_mat = get_material(above);
+            
+            // Empty above - rise
+            if (above_mat == MATERIAL_AIR) {
+                set_particle(index, MATERIAL_AIR);
+                set_particle(above_idx, current);
+                return;
+            }
+            
+            // Try diagonal rise
+            let go_left = (index + uniforms.tick) % 2u == 0u;
+            
+            if (go_left && x > 0u) {
+                let diag_idx = get_index(x - 1u, y - 1u, width);
+                if (get_material(particle_buffer[diag_idx]) == MATERIAL_AIR) {
+                    set_particle(index, MATERIAL_AIR);
+                    set_particle(diag_idx, current);
+                    return;
+                }
+            } else if (x + 1u < width) {
+                let diag_idx = get_index(x + 1u, y - 1u, width);
+                if (get_material(particle_buffer[diag_idx]) == MATERIAL_AIR) {
+                    set_particle(index, MATERIAL_AIR);
+                    set_particle(diag_idx, current);
+                    return;
+                }
+            }
+        }
     }
-}
-
-// Render shader for visualization
-@fragment
-fn render_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
-    // This would be in a separate render pipeline
-    // For now, just output white placeholder
-    return vec4<f32>(1.0, 1.0, 1.0, 1.0);
+    
+    // Default: copy particle as-is
+    set_particle(index, current);
 }

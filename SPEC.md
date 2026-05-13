@@ -137,8 +137,8 @@ This is the foundational implementation of a falling sand particle simulation en
   - [x] WebGPU initialization with fallback
   - [x] WGSL compute shader for particle physics
   - [x] GPU buffer management (u32 encoded particles)
-  - [ ] GPU↔CPU buffer sync implementation
-  - [ ] Render pipeline (vertex/fragment shaders)
+  - [ ] GPU↔CPU buffer sync implementation (needs integration)
+  - [ ] Render pipeline (vertex/fragment shaders) (needs integration)
 - [ ] User interaction (click to spawn)
 - [ ] wasm-bindgen web scaffold
 - [ ] Chemical reactions (water + fire = steam/smoke)
@@ -367,6 +367,10 @@ npm run build  # Production build
 - [x] Touch support for mobile
 - [x] Responsive layout
 
+### Pending (P2 - Nice to Have)
+- Temperature overlay toggle
+- Velocity overlay toggle
+
 ---
 
 ## Complete Project Roadmap
@@ -378,6 +382,6 @@ npm run build  # Production build
 | Phase 3 | FUL-3 | ✅ | Black hole physics |
 | Phase 4 | FUL-4 | ✅ | Temperature system |
 | Phase 5 | FUL-6 | ✅ | Full material system (13 materials) |
-| Phase 6 | FUL-5 | ✅ | Interactive editor |
+| Phase 6 | FUL-5 | ✅ | Interactive editor, gameplay |
 
 **Project Status: COMPLETE** - All phases implemented

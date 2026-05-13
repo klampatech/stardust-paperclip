@@ -1,8 +1,9 @@
 // FUL-5: Phase 6 - Main App Component
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Material, MATERIALS } from './materials';
+import { Material, MATERIALS, getMaterialByKey } from './materials';
 import { SimulationCanvas } from './simulation';
+import type { OverlayMode } from './simulation';
 import MaterialPalette from './components/MaterialPalette';
 import ControlBar from './components/ControlBar';
 import BrushSelector from './components/BrushSelector';
@@ -19,6 +20,9 @@ export default function App() {
   const [isPlaying, setIsPlaying] = useState(true);
   const [speed, setSpeed] = useState(1);
   const [particleCount, setParticleCount] = useState(0);
+  const [stats, setStats] = useState({ particlesConsumed: 0, totalMass: 0, blackHoles: 0 });
+  const [showStructures, setShowStructures] = useState(false);
+  const [overlayMode, setOverlayMode] = useState<OverlayMode>('none');
 
   // Refs
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -56,6 +60,7 @@ export default function App() {
       sim.tick();
       lastTickRef.current = timestamp;
       setParticleCount(sim.countParticles());
+      setStats(sim.getStats());
     }
 
     // Render
@@ -158,6 +163,14 @@ export default function App() {
           e.preventDefault();
           setIsPlaying(p => !p);
           break;
+        case 'p':
+          // Cycle overlay: none -> temperature -> velocity -> none
+          setOverlayMode(current => {
+            if (current === 'none') return 'temperature';
+            if (current === 'temperature') return 'velocity';
+            return 'none';
+          });
+          break;
         case 'c':
           simulationRef.current?.clear();
           setParticleCount(0);
@@ -204,15 +217,62 @@ export default function App() {
     setBrushSize(size);
   }, []);
 
+  // Step (single tick)
+  const handleStep = useCallback(() => {
+    if (simulationRef.current) {
+      simulationRef.current.tick();
+      setParticleCount(simulationRef.current.countParticles());
+      setStats(simulationRef.current.getStats());
+    }
+  }, []);
+
+  // Spawn structure
+  const handleSpawnStructure = useCallback((type: 'ship' | 'asteroid' | 'station') => {
+    if (!canvasRef.current || !simulationRef.current) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+    const x = rect.width / 2;
+    const y = rect.height / 2;
+    simulationRef.current.spawnStructure(type, x, y);
+    setParticleCount(simulationRef.current.countParticles());
+  }, []);
+  
+  // Handle overlay toggle
+  const handleOverlayChange = useCallback((mode: OverlayMode) => {
+    setOverlayMode(mode);
+    simulationRef.current?.setOverlayMode(mode);
+  }, []);
+
+  // Reset stats
+  const handleResetStats = useCallback(() => {
+    if (simulationRef.current) {
+      simulationRef.current.resetStats();
+      setStats({ particlesConsumed: 0, totalMass: 0, blackHoles: 0 });
+    }
+  }, []);
+
   return (
     <div className="editor-container">
       <ControlBar
         isPlaying={isPlaying}
         speed={speed}
+        overlayMode={overlayMode}
         onTogglePlay={handleTogglePlay}
         onClear={handleClear}
         onSpeedChange={handleSpeedChange}
+        onStep={handleStep}
+        onToggleStructures={() => setShowStructures(s => !s)}
+        showStructures={showStructures}
+        onOverlayChange={handleOverlayChange}
       />
+
+      {showStructures && (
+        <div className="structure-bar">
+          <span>Structures:</span>
+          <button onClick={() => handleSpawnStructure('ship')} title="Spawn Ship">🚀 Ship</button>
+          <button onClick={() => handleSpawnStructure('asteroid')} title="Spawn Asteroid">🪨 Asteroid</button>
+          <button onClick={() => handleSpawnStructure('station')} title="Spawn Station">🛸 Station</button>
+        </div>
+      )}
 
       <div className="canvas-container">
         <canvas
@@ -224,6 +284,7 @@ export default function App() {
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
+          onContextMenu={(e) => e.preventDefault()}
           style={{ cursor: 'crosshair' }}
         />
       </div>
@@ -238,6 +299,8 @@ export default function App() {
         brushSize={brushSize}
         particleCount={particleCount}
         onBrushSizeChange={handleBrushSizeChange}
+        stats={stats}
+        onResetStats={handleResetStats}
       />
     </div>
   );

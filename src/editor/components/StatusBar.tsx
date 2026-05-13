@@ -9,6 +9,8 @@ interface StatusBarProps {
   brushSize: 1 | 3 | 5;
   particleCount: number;
   onBrushSizeChange: (size: 1 | 3 | 5) => void;
+  stats?: { particlesConsumed: number; totalMass: number; blackHoles: number };
+  onResetStats?: () => void;
 }
 
 export default function StatusBar({
@@ -16,6 +18,8 @@ export default function StatusBar({
   brushSize,
   particleCount,
   onBrushSizeChange,
+  stats,
+  onResetStats,
 }: StatusBarProps) {
   const materialInfo = getMaterialById(selectedMaterial);
 
@@ -36,6 +40,29 @@ export default function StatusBar({
           <span>Particles:</span>
           <strong>{particleCount.toLocaleString()}</strong>
         </div>
+
+        {stats && stats.blackHoles > 0 && (
+          <>
+            <div className="status-item">
+              <span>Consumed:</span>
+              <strong>{stats.particlesConsumed.toLocaleString()}</strong>
+            </div>
+            <div className="status-item">
+              <span>Mass:</span>
+              <strong>{stats.totalMass.toFixed(1)}</strong>
+            </div>
+            <div className="status-item">
+              <span>Holes:</span>
+              <strong>{stats.blackHoles}</strong>
+            </div>
+          </>
+        )}
+
+        {onResetStats && stats && stats.particlesConsumed > 0 && (
+          <button className="reset-stats-btn" onClick={onResetStats} title="Reset stats">
+            ↺
+          </button>
+        )}
       </div>
 
       <div className="keyboard-hints">

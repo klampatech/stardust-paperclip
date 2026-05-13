@@ -87,7 +87,20 @@ impl Simulator {
         
         // Phase 2: Process chunks bottom-to-top, focusing on dirty chunks
         // Process in chunks for better cache locality
+        // Skip sleeping particles - they don't need physics updates
         let chunk_height = ((height + CHUNK_SIZE - 1) / CHUNK_SIZE) as i32;
+        
+        // Build spatial hash for this tick - enables O(1) neighbor lookups
+        // Using GridSpatialHash for better cache locality and performance
+        // Option: use smaller cell_size (8 vs 16) for fewer particles per cell
+        let mut spatial_hash = crate::chunk::GridSpatialHash::new(width, height, 16);
+        for y in 0..height {
+            for x in 0..width {
+                if !grid.is_empty(x, y) {
+                    spatial_hash.insert(x, y);
+                }
+            }
+        }
         
         for chunk_y in (0..chunk_height).rev() {
             for chunk_x in 0..((width + CHUNK_SIZE - 1) / CHUNK_SIZE) as i32 {
@@ -108,11 +121,21 @@ impl Simulator {
                 
                 for y in start_y..end_y {
                     for x in start_x..end_x {
-                        self.process_single_chunked(grid, x, y);
+                        // Skip sleeping particles - they are stable and don't move
+                        if grid.is_sleeping(x, y) {
+                            continue;
+                        }
+                        self.process_single_chunked_with_hash(grid, x, y, &spatial_hash);
                     }
                 }
             }
         }
+        
+        // Wake particles in chunks adjacent to dirty chunks
+        grid.wake_neighbor_chunks();
+        
+        // Mark stable particles as sleeping for next tick
+        // (Implementation: particles that didn't move this tick could be marked sleeping)
         
         // Phase 3: Emit Hawking radiation from black holes
         self.emit_hawking_radiation_chunked(grid);
@@ -144,6 +167,71 @@ impl Simulator {
             Material::Smoke => self.update_smoke_chunked(grid, x, y),
             Material::Steam => self.update_steam_chunked(grid, x, y),
             Material::Lava => self.update_lava_chunked(grid, x, y),
+            Material::Ash => self.update_ash_chunked(grid, x, y),
+            Material::BlackHole => {} // Black holes are static
+            Material::Air | Material::Stone | Material::Wood => {}
+        }
+    }
+    
+    /// Process a single cell in chunked grid using spatial hash for O(1) neighbor lookup
+    /// This method demonstrates the integration of spatial hashing into the physics pipeline
+    /// Works with both SpatialHash and GridSpatialHash
+    fn process_single_chunked_with_hash<H: SpatialHashTrait>(&mut self, grid: &mut ChunkedGrid, x: usize, y: usize, spatial_hash: &H) {
+        use crate::particle::Material;
+        
+        let particle = match grid.get(x, y) {
+            Some(p) => p,
+            None => return,
+        };
+        
+        match particle.material {
+            // Materials that benefit from spatial hash neighbor lookups
+            Material::Fire => {
+                // Fire spread uses spatial hash for O(1) neighbor queries
+                let neighbors = spatial_hash.get_neighbors(x, y);
+                for (nx, ny) in neighbors {
+                    if let Some(np) = grid.get(nx, ny) {
+                        // Water extinguishes fire
+                        if np.material == Material::Water {
+                            // Extinguish this fire cell
+                            grid.remove(x, y);
+                            // Create steam at the water location
+                            if grid.in_bounds(nx, ny) {
+                                let _ = grid.spawn(nx, ny, Material::Steam);
+                            }
+                            return;
+                        }
+                    }
+                }
+                // Continue with normal fire physics
+                self.update_fire_chunked(grid, x, y);
+            },
+            Material::Lava => {
+                // Lava heating uses spatial hash for O(1) neighbor queries
+                let neighbors = spatial_hash.get_neighbors(x, y);
+                let mut heated_any = false;
+                for (nx, ny) in neighbors {
+                    if let Some(mut np) = grid.get(nx, ny) {
+                        if np.material.is_flammable() && !np.flags.burning {
+                            // Heat up flammable material - skip random chance for now
+                            if np.temperature < 500.0 {
+                                np.temperature += 5.0;
+                                let _ = grid.set(nx, ny, np);
+                                heated_any = true;
+                            }
+                        }
+                    }
+                }
+                // Continue with normal lava physics
+                self.update_lava_chunked(grid, x, y);
+            },
+            // Other materials use standard physics (could be upgraded to spatial hash too)
+            Material::Sand => self.update_sand_chunked(grid, x, y),
+            Material::Water => self.update_water_chunked(grid, x, y),
+            Material::Oil => self.update_oil_chunked(grid, x, y),
+            Material::Ice => self.update_ice_chunked(grid, x, y),
+            Material::Smoke => self.update_smoke_chunked(grid, x, y),
+            Material::Steam => self.update_steam_chunked(grid, x, y),
             Material::Ash => self.update_ash_chunked(grid, x, y),
             Material::BlackHole => {} // Black holes are static
             Material::Air | Material::Stone | Material::Wood => {}

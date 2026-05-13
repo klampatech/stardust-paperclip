@@ -131,7 +131,7 @@ impl Default for PostProcessingConfig {
 }
 
 /// Color grading presets
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ColorGradingMode {
     /// Default colors, no grading
     None,
@@ -156,14 +156,15 @@ impl ColorGradingMode {
             ColorGradingMode::None => {}
             ColorGradingMode::Vibrant => {
                 // Slightly boost saturation and warmth
-                let avg = ((color.r as u32 + color.g as u32 + color.b as u32) / 3) as u8;
+                let avg = ((color.r as u32 + color.g as u32 + color.b as u32) / 3) as i32;
                 let boost = |c: u8| -> u8 {
-                    let diff = (c as i16 - avg as i16) * 3 / 2;
-                    (c as i16 + diff).max(0).min(255) as u8
+                    let c = c as i32;
+                    let diff = (c - avg) * 3 / 2;
+                    ((c + diff) as f32).clamp(0.0, 255.0) as u8
                 };
                 color.r = boost(color.r);
-                color.g = (color.g * 105 / 100).min(255);
-                color.b = (color.b * 95 / 100).min(255);
+                color.g = ((color.g as f32 * 1.05).min(255.0)) as u8;
+                color.b = ((color.b as f32 * 0.95).max(0.0)) as u8;
             }
             ColorGradingMode::Cool => {
                 // Shift toward blue
@@ -270,53 +271,63 @@ pub struct PostProcessorConfigMut<'a> {
 
 impl<'a> PostProcessorConfigMut<'a> {
     /// Enable bloom
-    pub fn enable_bloom(&mut self, enabled: bool) {
+    pub fn enable_bloom(&mut self, enabled: bool) -> &mut Self {
         self.inner.config.bloom_enabled = enabled;
+        self
     }
     
     /// Set bloom intensity
-    pub fn set_bloom_intensity(&mut self, intensity: f32) {
+    pub fn set_bloom_intensity(&mut self, intensity: f32) -> &mut Self {
         self.inner.config.bloom_intensity = intensity.clamp(0.0, 1.0);
+        self
     }
     
     /// Enable chromatic aberration
-    pub fn enable_chromatic_aberration(&mut self, enabled: bool) {
+    pub fn enable_chromatic_aberration(&mut self, enabled: bool) -> &mut Self {
         self.inner.config.chromatic_aberration_enabled = enabled;
+        self
     }
     
     /// Set chromatic aberration strength
-    pub fn set_chromatic_strength(&mut self, strength: f32) {
+    pub fn set_chromatic_strength(&mut self, strength: f32) -> &mut Self {
         self.inner.config.chromatic_strength = strength.clamp(0.0, 2.0);
+        self
     }
     
     /// Enable space distortion
-    pub fn enable_space_distortion(&mut self, enabled: bool) {
+    pub fn enable_space_distortion(&mut self, enabled: bool) -> &mut Self {
         self.inner.config.space_distortion_enabled = enabled;
+        self
     }
     
     /// Set space distortion strength
-    pub fn set_distortion_strength(&mut self, strength: f32) {
+    pub fn set_distortion_strength(&mut self, strength: f32) -> &mut Self {
         self.inner.config.space_distortion_strength = strength.clamp(0.0, 1.0);
+        self
     }
     
     /// Enable velocity shift
-    pub fn enable_velocity_shift(&mut self, enabled: bool) {
+    pub fn enable_velocity_shift(&mut self, enabled: bool) -> &mut Self {
         self.inner.config.velocity_shift_enabled = enabled;
+        self
     }
     
     /// Enable additive blend
-    pub fn enable_additive_blend(&mut self, enabled: bool) {
+    pub fn enable_additive_blend(&mut self, enabled: bool) -> &mut Self {
         self.inner.config.additive_blend_enabled = enabled;
+        self
     }
     
     /// Set color grading mode
-    pub fn set_color_grading(&mut self, mode: ColorGradingMode) {
+    pub fn set_color_grading(&mut self, mode: ColorGradingMode) -> &mut Self {
         self.inner.config.color_grading_mode = mode;
+        self
     }
     
     /// Set camera zoom
-    pub fn set_zoom(&mut self, zoom: f32) {
+    pub fn set_zoom(&mut self, zoom: f32) -> &mut Self {
         self.inner.config.camera_zoom = zoom.max(0.5).min(10.0);
+        self
     }
 }
 

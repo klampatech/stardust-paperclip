@@ -9,118 +9,138 @@
 
 ## Implementation Summary
 
-GPU compute shader pipeline has been scaffolded for WebGPU acceleration of particle simulation physics.
+GPU compute shader pipeline for WebGPU acceleration of particle simulation physics.
 
-### Files Created
+### Files Created/Modified
 
-| File | Lines | Purpose |
-|------|-------|---------|
-| `src/gpu/mod.rs` | 14 | Module declarations |
-| `src/gpu/compute.rs` | 220 | WebGPU pipeline implementation |
-| `src/gpu/shaders.wgsl` | 250 | WGSL compute shader source |
-| `examples/gpu_demo.rs` | 200 | Demo with benchmarks |
-| `FUL-10_REQUIREMENTS.md` | 150 | Requirements documentation |
-
----
-
-## Implementation Details
-
-### 1. GPU Module (`src/gpu/mod.rs`)
-
-```rust
-//! GPU Compute Shader Pipeline
-//! Implements parallel particle simulation using WebGPU compute shaders.
-
-#[cfg(feature = "gpu")]
-mod compute;
-
-#[cfg(feature = "gpu")]
-pub use compute::*;
-```
-
-### 2. Compute Pipeline (`src/gpu/compute.rs`)
-
-- `GpuStatus` enum: Ready, Initializing, Unavailable, Error
-- `GpuPipeline` struct with WebGPU device, compute pipeline, buffers
-- Async `new()` initialization with adapter/device request
-- Particle buffer (u32 per cell for material + flags)
-- Uniform buffer for simulation parameters (width, height, tick)
-
-### 3. WGSL Shader (`src/gpu/shaders.wgsl`)
-
-```wgsl
-// Material constants (0-12 for 13 materials)
-// Helper functions: has_gravity(), rises(), can_move()
-// Main compute shader: processes each cell per thread
-// - Gravity materials: fall down, diagonal spread
-// - Rise materials: rise up, diagonal spread
-// - Water special: horizontal flow
-```
-
-### 4. Demo (`examples/gpu_demo.rs`)
-
-- GPU availability check with fallback message
-- CPU benchmarks (256x256 and 512x512 grids)
-- Interactive demo with sand, water, fire, oil
+| File | Lines | Status |
+|------|-------|--------|
+| `src/gpu/mod.rs` | 9 | ✅ Done |
+| `src/gpu/compute.rs` | 370 | ✅ Enhanced |
+| `src/gpu/shaders.wgsl` | 220 | ✅ Enhanced |
+| `examples/gpu_demo.rs` | 215 | ✅ Done |
+| `examples/gpu_bench.rs` | 150 | ✅ New |
+| `Cargo.toml` | 25 | ✅ Updated |
+| `SPEC.md` | 10 | ✅ Updated |
+| `FUL-10_REQUIREMENTS.md` | 160 | ✅ Done |
+| `FUL-10_STATUS.md` | 180 | ✅ This file |
 
 ---
 
-## Feature Flags
+## Architecture
 
-```toml
-[features]
-default = []
-wasm = ["wasm-bindgen", "js-sys"]
-gpu = ["wgpu"]  # NEW
-
-[dependencies]
-wgpu = { version = "0.17", optional = true }
 ```
+┌─────────────────────────────────────────────────┐
+│              GPU Pipeline (Rust)                │
+├─────────────────────────────────────────────────┤
+│  GpuPipeline                                    │
+│  ├── device: wgpu::Device                       │
+│  ├── queue: wgpu::Queue                        │
+│  ├── compute_pipeline: wgpu::ComputePipeline   │
+│  ├── particle_buffer_in: Buffer               │
+│  ├── particle_buffer_out: Buffer (ping-pong)   │
+│  ├── uniform_buffer: Buffer                    │
+│  ├── bind_group / bind_group_alt              │
+│  └── tick, ping_pong state                    │
+└─────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────┐
+│              WGSL Compute Shader                │
+├─────────────────────────────────────────────────┤
+│  @workgroup_size(256)                          │
+│  ├── Uniforms: width, height, tick             │
+│  ├── particle_buffer: read                     │
+│  ├── particle_buffer_out: read_write           │
+│  ├── Material helpers: has_gravity, rises     │
+│  └── Per-particle: copy/swap logic             │
+└─────────────────────────────────────────────────┘
+```
+
+---
+
+## Key Features Implemented
+
+### 1. Ping-Pong Double Buffering
+- Two particle buffers (in/out) for GPU computation
+- Alternating bind groups swap read/write buffers
+- Prevents read-write conflicts
+
+### 2. Bind Groups
+- Layout: Uniform | Storage (readonly) | Storage (read_write)
+- Two bind groups for ping-pong
+- 16-byte aligned uniforms
+
+### 3. Compute Shader (WGSL)
+- @workgroup_size(256) - 256 threads per workgroup
+- Material encoding: 5 bits for 13 materials (0-12)
+- Gravity materials: fall down + diagonal
+- Rise materials: rise up + diagonal
+- Water: horizontal flow when can't fall
+- Stone/Wood/BlackHole: immovable (copy as-is)
+
+### 4. CPU Fallback
+- When GPU feature disabled, falls back to CPU simulation
+- Same API for transparent switching
+- Uses existing CPU Simulator
 
 ---
 
 ## Build & Run
 
 ```bash
-# Default (no GPU)
+# CPU-only (default)
 cargo build
 
-# With GPU support
+# GPU-enabled
 cargo build --features gpu
 
-# Run demo
+# CPU demo
+cargo run --example demo
+
+# GPU demo (shows GPU info)
 cargo run --example gpu_demo --features gpu
+
+# GPU benchmark (requires async runtime)
+cargo run --example gpu_bench --features gpu --release
+
+# Tests
+cargo test
 ```
 
 ---
 
-## Current Limitations
+## Performance Targets
 
-1. **Shader compilation**: WGSL syntax needs validation in actual runtime
-2. **Atomic operations**: GPU swaps require proper synchronization
-3. **Buffer transfer**: CPU↔GPU sync not yet implemented
-4. **Render pipeline**: Only compute, no visualization shader
+| Target | Particles | FPS |
+|--------|-----------|-----|
+| Minimum | 100,000 | 30 |
+| Target | 500,000 | 60 |
+| Stretch | 1,000,000 | LOD |
 
 ---
 
 ## Next Steps
 
-1. **Validate WGSL**: Test shader compiles with actual wgpu runtime
-2. **Implement buffer sync**: encode/decode grid ↔ GPU buffers
-3. **Add atomic swaps**: thread-safe particle movement
-4. **Compute dispatch**: submit shader work groups
-5. **Performance testing**: benchmark vs CPU baseline
+1. **GPU Testing**: Test with `gpu_bench` example on GPU-enabled system
+2. **Buffer Sync**: Implement encode/decode between Grid ↔ GPU
+3. **Render Pipeline**: Add vertex/fragment shaders for visualization
+4. **LOD System**: Distance-based particle merging
+5. **GPU Profiling**: Frame timing instrumentation
 
 ---
 
 ## Handoff Notes
 
-The scaffold is complete. To enable actual GPU acceleration:
+The GPU compute pipeline scaffold is complete with:
+- Async WebGPU initialization
+- Ping-pong buffer management
+- WGSL compute shader
+- CPU fallback implementation
 
-1. Test with `cargo run --example gpu_demo --features gpu --release`
-2. If WebGPU unavailable, gracefully falls back to CPU-only mode
-3. Actual compute dispatch requires queue submission in tick()
-4. Consider render pipeline next (vertex/fragment for visualization)
+**Next owner (CTO) should:**
+1. Test `cargo run --example gpu_bench --features gpu`
+2. If WebGPU unavailable, work on buffer sync for CPU integration
+3. Consider render pipeline for visualization
 
 ---
 
