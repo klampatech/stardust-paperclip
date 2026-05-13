@@ -132,6 +132,8 @@ pub struct ChunkedGrid {
     chunks: std::collections::HashMap<ChunkPos, Chunk>,
     chunk_count_x: i32,
     chunk_count_y: i32,
+    /// Set of chunks modified since last tick (for dirty tracking)
+    dirty_chunks: std::collections::HashSet<ChunkPos>,
 }
 
 impl ChunkedGrid {
@@ -145,6 +147,7 @@ impl ChunkedGrid {
             chunks: std::collections::HashMap::new(),
             chunk_count_x,
             chunk_count_y,
+            dirty_chunks: std::collections::HashSet::new(),
         }
     }
     
@@ -183,7 +186,15 @@ impl ChunkedGrid {
         }
         
         let local = ChunkLocalPos::from_world(x, y);
-        self.get_chunk_mut(local.chunk).set_local(local.lx, local.ly, particle)
+        let chunk = self.get_chunk_mut(local.chunk);
+        let changed = chunk.set_local(local.lx, local.ly, particle);
+        
+        // Mark chunk as dirty if content changed
+        if changed {
+            self.dirty_chunks.insert(local.chunk);
+        }
+        
+        changed
     }
     
     /// Check if cell is empty
@@ -209,7 +220,9 @@ impl ChunkedGrid {
         
         // Only spawn if empty
         if chunk.is_empty_local(local.lx, local.ly) {
-            chunk.set_local(local.lx, local.ly, Particle::new(material))
+            chunk.set_local(local.lx, local.ly, Particle::new(material));
+            self.dirty_chunks.insert(local.chunk);
+            true
         } else {
             false
         }
@@ -227,14 +240,56 @@ impl ChunkedGrid {
     /// Swap two positions
     pub fn swap(&mut self, x1: usize, y1: usize, x2: usize, y2: usize) {
         if let (Some(p1), Some(p2)) = (self.get(x1, y1), self.get(x2, y2)) {
-            let _ = self.set(x2, y2, p1);
-            let _ = self.set(x1, y1, p2);
+            let local1 = ChunkLocalPos::from_world(x1, y1);
+            let local2 = ChunkLocalPos::from_world(x2, y2);
+            
+            // Handle same-chunk and cross-chunk swaps differently
+            if local1.chunk == local2.chunk {
+                // Same chunk - we can do it safely
+                if let Some(chunk) = self.chunks.get_mut(&local1.chunk) {
+                    chunk.set_local(local1.lx, local1.ly, p2);
+                    chunk.set_local(local2.lx, local2.ly, p1);
+                }
+            } else {
+                // Cross-chunk swap - need to get both chunks but handle carefully
+                // First get p1's chunk and set p2 there
+                let chunk1 = self.get_chunk_mut(local1.chunk);
+                chunk1.set_local(local1.lx, local1.ly, p2);
+                
+                // Then get p2's chunk and set p1 there
+                let chunk2 = self.get_chunk_mut(local2.chunk);
+                chunk2.set_local(local2.lx, local2.ly, p1);
+            }
+            
+            // Mark affected chunks as dirty
+            self.dirty_chunks.insert(local1.chunk);
+            self.dirty_chunks.insert(local2.chunk);
         }
     }
     
     /// Get total particle count across all chunks
     pub fn total_particles(&self) -> usize {
         self.chunks.values().map(|c| c.particle_count()).sum()
+    }
+    
+    /// Get all dirty chunks that need processing
+    pub fn dirty_chunks(&self) -> &std::collections::HashSet<ChunkPos> {
+        &self.dirty_chunks
+    }
+    
+    /// Get all dirty chunks as a mutable reference for processing
+    pub fn dirty_chunks_mut(&mut self) -> &mut std::collections::HashSet<ChunkPos> {
+        &mut self.dirty_chunks
+    }
+    
+    /// Mark a chunk as dirty (e.g., when a neighbor chunk's particle affected it)
+    pub fn mark_dirty(&mut self, pos: ChunkPos) {
+        self.dirty_chunks.insert(pos);
+    }
+    
+    /// Clear dirty flags after processing
+    pub fn clear_dirty(&mut self) {
+        self.dirty_chunks.clear();
     }
     
     /// Get all chunks that need processing

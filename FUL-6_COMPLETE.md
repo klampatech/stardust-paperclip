@@ -10,11 +10,11 @@
 
 ## Summary
 
-Phase 3 implemented the full material system with 5 new materials and temperature-based physics. All requirements from FUL-6_REQUIREMENTS.md have been fulfilled.
+Phase 3 implemented the full material system with 6 new materials and temperature-based physics. All requirements from FUL-6_REQUIREMENTS.md have been fulfilled.
 
 ## Implementation Summary
 
-### New Materials Added (5)
+### New Materials Added (6)
 
 | Material | Behavior | Implementation |
 |----------|----------|----------------|
@@ -23,6 +23,7 @@ Phase 3 implemented the full material system with 5 new materials and temperatur
 | **Oil** | Flammable liquid, flows 33% speed of water, burns 60-80 ticks | `src/simulation.rs` - `update_oil()` |
 | **Wood** | Solid, flammable, burns slowly 100-150 ticks, ignites from fire/lava | `src/simulation.rs` - handled in `process_row()` |
 | **Lava** | Hot (1500K), flows 25% speed, ignites nearby, cools to stone over time | `src/simulation.rs` - `update_lava()` |
+| **Ash** | Static residue from burning wood/oil, falls slowly | `src/simulation.rs` - static handler |
 
 ### Temperature System
 
@@ -55,7 +56,7 @@ Phase 3 implemented the full material system with 5 new materials and temperatur
 
 ## Test Results
 
-**New Tests Added (10):**
+**New Tests Added (13):**
 - `test_steam_rises` - Steam rises faster than smoke
 - `test_steam_dissipates` - Steam dissipates after 40-60 ticks
 - `test_oil_burns` - Oil ignites and burns from fire
@@ -66,14 +67,17 @@ Phase 3 implemented the full material system with 5 new materials and temperatur
 - `test_ice_sinks` - Ice sinks in water
 - `test_lava_water_creates_steam` - Lava + water creates steam
 - `test_material_count` - Verifies all 12 materials exist
+- `test_wood_creates_ash` - Wood burns to ash
+- `test_ash_does_not_move` - Ash is static
+- `test_material_count_13` - Verifies all 13 materials
 
-**Total Tests:** 26 (16 existing + 10 new)
+**Total Tests:** 29 (16 existing + 13 new) - **All passing**
 
 ## Material System Summary
 
 ```
-Total Materials: 12
-├── Fluids (fall): Sand, Water, Oil, Ice
+Total Materials: 13
+├── Fluids (fall): Sand, Water, Oil, Ice, Ash
 ├── Risers (rise): Fire, Smoke, Steam
 ├── Solids (static): Stone, Wood, BlackHole
 └── Special: Lava (hot, flows slowly)

@@ -13,11 +13,14 @@ crate-type = ["lib", "cdylib", "rlib"]
 [features]
 default = []
 wasm = ["wasm-bindgen", "js-sys"]
+gpu = ["wgpu"]
 
 [dependencies]
 # WASM support (optional)
 wasm-bindgen = { version = "0.2", optional = true }
 js-sys = { version = "0.3", optional = true }
+# GPU support (optional)
+wgpu = { version = "0.17", optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 # Native-only dependencies can go here
@@ -27,5 +30,9 @@ js-sys = { version = "0.3", optional = true }
 [[example]]
 name = "demo"
 path = "examples/demo.rs"
+
+[[example]]
+name = "gpu_demo"
+path = "examples/gpu_demo.rs"
 
 

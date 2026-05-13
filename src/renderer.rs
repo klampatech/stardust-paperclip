@@ -243,7 +243,7 @@ mod tests {
     
     #[test]
     fn test_renderer_creation() {
-        let mut renderer = Renderer::new(64, 64, 4);
+        let renderer = Renderer::new(64, 64, 4);
         assert_eq!(renderer.pixels.len(), 64 * 64 * 4 * 4 * 4); // width * height * scale^2 * RGBA
     }
     

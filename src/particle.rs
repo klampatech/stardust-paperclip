@@ -84,7 +84,7 @@ impl Material {
     
     /// Returns true if the material falls with gravity
     pub fn has_gravity(&self) -> bool {
-        matches!(self, Material::Sand | Material::Water | Material::Oil | Material::Ice)
+        matches!(self, Material::Sand | Material::Water | Material::Oil | Material::Ice | Material::Ash)
     }
     
     /// Returns true if the material is flammable (can be ignited)

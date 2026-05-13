@@ -42,6 +42,10 @@ pub use crate::simulation::Simulator;
 pub use crate::renderer::{Renderer, TerminalRenderer, Color};
 pub use crate::postprocessing::{PostProcessor, PostProcessingConfig, ColorGradingMode, ScreenShake};
 
+// GPU compute pipeline (optional feature)
+#[cfg(feature = "gpu")]
+pub mod gpu;
+
 // Internal modules
 mod grid;
 mod particle;
