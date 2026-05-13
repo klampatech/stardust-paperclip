@@ -4,14 +4,14 @@
 //! 
 //! # Features
 //! - Spatial partitioning with 64x64 chunks for 50,000+ particle support
-//! - 12 material types with distinct physics behaviors
+//! - 13 material types with distinct physics behaviors
 //! - Temperature system for heat simulation and phase changes
 //! - Fire spread, lava heating, and material interactions
 //! - Canvas2D rendering pipeline
 //! - WebAssembly support via wasm-bindgen
 //! 
-//! # Materials (12)
-//! - **Fluids**: Sand, Water, Oil, Ice (fall with gravity)
+//! # Materials (13)
+//! - **Fluids**: Sand, Water, Oil, Ice, Ash (fall with gravity)
 //! - **Risers**: Fire, Smoke, Steam (rise upward)
 //! - **Solids**: Stone, Wood (static, immovable)
 //! - **Special**: BlackHole (gravity well), Lava (hot, flows slowly)
@@ -40,6 +40,7 @@ pub use crate::particle::{Material, Particle, ParticleFlags, BlackHoleProps};
 pub use crate::chunk::{Chunk, ChunkedGrid, ChunkPos, CHUNK_SIZE};
 pub use crate::simulation::Simulator;
 pub use crate::renderer::{Renderer, TerminalRenderer, Color};
+pub use crate::postprocessing::{PostProcessor, PostProcessingConfig, ColorGradingMode, ScreenShake};
 
 // Internal modules
 mod grid;
@@ -47,6 +48,7 @@ mod particle;
 mod chunk;
 mod simulation;
 pub mod renderer;
+pub mod postprocessing;
 
 // WASM-specific exports
 #[cfg(feature = "wasm")]
