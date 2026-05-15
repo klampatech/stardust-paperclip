@@ -1,9 +1,11 @@
 // FUL-5: Phase 6 - Main App Component
+// FUL-35c: Added spacecraft control mode
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Material, MATERIALS, getMaterialByKey } from './materials';
-import { SimulationCanvas } from './simulation';
+import { SimulationCanvas } from './simulation-optimized';
 import type { OverlayMode } from './simulation';
+import { ShipClass, SHIP_CLASS_INFO } from './spacecraft';
 import MaterialPalette from './components/MaterialPalette';
 import ControlBar from './components/ControlBar';
 import BrushSelector from './components/BrushSelector';
@@ -12,6 +14,39 @@ import StatusBar from './components/StatusBar';
 const GRID_WIDTH = 200;
 const GRID_HEIGHT = 150;
 const SCALE = 4;
+
+// Ship class selector component
+function ShipClassSelector({ 
+  onSelect, 
+  onCancel 
+}: { 
+  onSelect: (shipClass: ShipClass) => void; 
+  onCancel: () => void;
+}) {
+  return (
+    <div className="ship-selector-overlay">
+      <div className="ship-selector">
+        <h3>Select Ship Class</h3>
+        <div className="ship-options">
+          {Object.values(ShipClass).map((shipClass) => {
+            const info = SHIP_CLASS_INFO[shipClass as ShipClass];
+            return (
+              <button
+                key={shipClass}
+                className="ship-option"
+                onClick={() => onSelect(shipClass as ShipClass)}
+              >
+                <span className="ship-icon">{info.icon}</span>
+                <span className="ship-name">{info.name}</span>
+              </button>
+            );
+          })}
+        </div>
+        <button className="cancel-btn" onClick={onCancel}>Cancel</button>
+      </div>
+    </div>
+  );
+}
 
 export default function App() {
   // State
@@ -23,6 +58,10 @@ export default function App() {
   const [stats, setStats] = useState({ particlesConsumed: 0, totalMass: 0, blackHoles: 0 });
   const [showStructures, setShowStructures] = useState(false);
   const [overlayMode, setOverlayMode] = useState<OverlayMode>('none');
+  // FUL-35c: Spacecraft mode state
+  const [spacecraftMode, setSpacecraftMode] = useState(false);
+  const [showShipSelector, setShowShipSelector] = useState(false);
+  const [playerStats, setPlayerStats] = useState({ hull: 0, fuel: 0, shields: 0 });
 
   // Refs
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -250,6 +289,35 @@ export default function App() {
     }
   }, []);
 
+  // FUL-35c: Spacecraft mode handlers
+  const handleToggleSpacecraftMode = useCallback(() => {
+    if (spacecraftMode) {
+      // Exit spacecraft mode
+      simulationRef.current?.deactivateSpacecraftMode();
+      setSpacecraftMode(false);
+      setPlayerStats({ hull: 0, fuel: 0, shields: 0 });
+    } else {
+      // Show ship selector
+      setShowShipSelector(true);
+    }
+  }, [spacecraftMode]);
+
+  const handleSelectShipClass = useCallback((shipClass: ShipClass) => {
+    setShowShipSelector(false);
+    if (simulationRef.current) {
+      simulationRef.current.activateSpacecraftMode(shipClass);
+      setSpacecraftMode(true);
+      // Spawn some enemy ships for gameplay
+      simulationRef.current.spawnEnemyShip(ShipClass.Fighter, 600, 200);
+      simulationRef.current.spawnEnemyShip(ShipClass.Fighter, 100, 400);
+      simulationRef.current.spawnEnemyShip(ShipClass.Freighter, 700, 500);
+    }
+  }, []);
+
+  const handleCancelShipSelect = useCallback(() => {
+    setShowShipSelector(false);
+  }, []);
+
   return (
     <div className="editor-container">
       <ControlBar
@@ -263,7 +331,19 @@ export default function App() {
         onToggleStructures={() => setShowStructures(s => !s)}
         showStructures={showStructures}
         onOverlayChange={handleOverlayChange}
+        // FUL-35c: Spacecraft mode
+        spacecraftMode={spacecraftMode}
+        onToggleSpacecraftMode={handleToggleSpacecraftMode}
+        playerStats={playerStats}
       />
+
+      {/* FUL-35c: Ship class selector modal */}
+      {showShipSelector && (
+        <ShipClassSelector 
+          onSelect={handleSelectShipClass}
+          onCancel={handleCancelShipSelect}
+        />
+      )}
 
       {showStructures && (
         <div className="structure-bar">

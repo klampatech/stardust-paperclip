@@ -48,3 +48,21 @@ export function getMaterialByKey(key: string): MaterialInfo | undefined {
 export function getMaterialById(id: Material): MaterialInfo | undefined {
   return MATERIALS.find(m => m.id === id);
 }
+
+// WASM material name mapping (TypeScript enum → Rust string)
+export const MATERIAL_NAMES: Record<Material, string> = {
+  [Material.Air]: 'air',
+  [Material.Sand]: 'sand',
+  [Material.Water]: 'water',
+  [Material.Stone]: 'stone',
+  [Material.Fire]: 'fire',
+  [Material.Smoke]: 'smoke',
+  [Material.BlackHole]: 'blackhole',
+  [Material.Steam]: 'steam',
+  [Material.Ice]: 'ice',
+  [Material.Oil]: 'oil',
+  [Material.Wood]: 'wood',
+  [Material.Lava]: 'lava',
+  [Material.Ash]: 'ash',
+  [Material.Eraser]: 'eraser',
+};

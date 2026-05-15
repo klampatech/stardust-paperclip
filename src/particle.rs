@@ -66,12 +66,12 @@ impl BlackHoleProps {
     /// Create a new black hole with default properties
     pub fn new() -> Self {
         Self {
-            gravity_strength: 1000.0,
-            event_horizon_radius: 3.0,
-            influence_radius: 30.0,
-            hawking_rate: 15,
-            tidal_strength: 2.0,
-            accretion_radius: 8.0,
+            gravity_strength: 5000.0,  // Increased for dramatic suction
+            event_horizon_radius: 4.0,  // Slightly larger event horizon
+            influence_radius: 50.0,    // Larger influence radius
+            hawking_rate: 20,
+            tidal_strength: 3.0,       // More dramatic spaghettification
+            accretion_radius: 10.0,
         }
     }
 }
@@ -145,6 +145,24 @@ impl Material {
             _ => 0.0,
         }
     }
+    
+    /// Get spaghettification stretch factor based on proximity to event horizon
+    /// Returns stretch magnitude (0.0 = no stretch, 1.0+ = extreme stretch)
+    pub fn stretch_factor(&self, dist_from_horizon: f32, horizon_radius: f32) -> f32 {
+        if dist_from_horizon <= 0.0 || horizon_radius <= 0.0 {
+            return 1.0; // Inside event horizon - maximum stretch
+        }
+        // Stretch increases exponentially as particle approaches horizon
+        // tidal_strength of 2.0 gives visible stretch at 1x horizon distance
+        let proximity = horizon_radius / (horizon_radius + dist_from_horizon);
+        proximity * proximity * 2.0
+    }
+    
+    /// Returns true if material is susceptible to spaghettification
+    pub fn can_stretch(&self) -> bool {
+        matches!(self, Material::Sand | Material::Water | Material::Oil | 
+                 Material::Stone | Material::Wood | Material::Ice | Material::Lava)
+    }
 }
 
 /// Particle flags for special behaviors
@@ -169,6 +187,8 @@ pub struct Particle {
     pub flags: ParticleFlags,
     /// Lifetime counter for transient particles (fire, smoke)
     pub lifetime: u32,
+    /// Spaghettification stretch factor (0.0 = no stretch, 1.0 = 2x elongation)
+    pub stretch: f32,
 }
 
 impl Particle {
@@ -180,6 +200,7 @@ impl Particle {
             temperature: material.default_temp(),
             flags: ParticleFlags::default(),
             lifetime: Self::default_lifetime(material),
+            stretch: 1.0,
         }
     }
     

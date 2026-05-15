@@ -451,3 +451,163 @@ body {
 .tooltip:hover::after {
   opacity: 1;
 }
+
+/* FUL-35c: Spacecraft Mode Styles */
+.control-bar button.spacecraft {
+  background: linear-gradient(135deg, #4CAF50, #2E7D32);
+  color: white;
+  font-weight: 600;
+}
+
+.control-bar button.spacecraft:hover {
+  background: linear-gradient(135deg, #66BB6A, #388E3C);
+}
+
+/* Ship Selector Modal */
+.ship-selector-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.ship-selector {
+  background: var(--bg-secondary);
+  border: 2px solid var(--accent);
+  border-radius: 12px;
+  padding: 1.5rem;
+  max-width: 500px;
+  width: 90%;
+}
+
+.ship-selector h3 {
+  text-align: center;
+  margin-bottom: 1rem;
+  color: var(--text-primary);
+  font-size: 1.25rem;
+}
+
+.ship-options {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.ship-option {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem;
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.ship-option:hover {
+  border-color: var(--accent);
+  background: rgba(233, 69, 96, 0.2);
+  transform: translateY(-2px);
+}
+
+.ship-option .ship-icon {
+  font-size: 1.5rem;
+}
+
+.ship-option .ship-name {
+  font-weight: 500;
+}
+
+.ship-selector .cancel-btn {
+  width: 100%;
+  padding: 0.75rem;
+  border: none;
+  border-radius: 6px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.15s ease;
+}
+
+.ship-selector .cancel-btn:hover {
+  background: var(--border);
+  color: var(--text-primary);
+}
+
+/* Spacecraft HUD styling */
+.spacecraft-hud {
+  position: absolute;
+  bottom: 1rem;
+  left: 1rem;
+  background: rgba(0, 0, 0, 0.7);
+  padding: 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  font-size: 0.8rem;
+}
+
+.spacecraft-hud .stat-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.spacecraft-hud .stat-label {
+  width: 50px;
+  color: var(--text-secondary);
+}
+
+.spacecraft-hud .stat-bar {
+  width: 100px;
+  height: 8px;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.spacecraft-hud .stat-fill {
+  height: 100%;
+  transition: width 0.2s ease;
+}
+
+.spacecraft-hud .stat-fill.hull {
+  background: linear-gradient(90deg, #4CAF50, #81C784);
+}
+
+.spacecraft-hud .stat-fill.fuel {
+  background: linear-gradient(90deg, #FFC107, #FFD54F);
+}
+
+.spacecraft-hud .stat-fill.shields {
+  background: linear-gradient(90deg, #2196F3, #64B5F6);
+}
+
+/* Keyboard hints for spacecraft */
+.control-bar .spacecraft-hints {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  padding-left: 0.5rem;
+  border-left: 2px solid var(--accent);
+}
+
+.control-bar .spacecraft-hints kbd {
+  padding: 0.1rem 0.3rem;
+  background: var(--bg-tertiary);
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  font-family: monospace;
+}

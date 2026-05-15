@@ -1,4 +1,5 @@
 // FUL-5: Phase 6 - Control Bar Component
+// FUL-35c: Added spacecraft mode controls
 import type { OverlayMode } from '../simulation';
 
 interface ControlBarProps {
@@ -12,6 +13,10 @@ interface ControlBarProps {
   onToggleStructures?: () => void;
   showStructures?: boolean;
   onOverlayChange?: (mode: OverlayMode) => void;
+  // FUL-35c: Spacecraft mode props
+  spacecraftMode?: boolean;
+  onToggleSpacecraftMode?: () => void;
+  playerStats?: { hull: number; fuel: number; shields: number };
 }
 
 const SPEED_OPTIONS = [
@@ -34,9 +39,27 @@ export default function ControlBar({
   onToggleStructures,
   showStructures,
   onOverlayChange,
+  // FUL-35c: Spacecraft mode props
+  spacecraftMode = false,
+  onToggleSpacecraftMode,
+  playerStats = { hull: 0, fuel: 0, shields: 0 },
 }: ControlBarProps) {
   return (
     <div className="control-bar">
+      {/* FUL-35c: Spacecraft mode toggle */}
+      {onToggleSpacecraftMode && (
+        <>
+          <button
+            className={spacecraftMode ? 'active spacecraft' : ''}
+            onClick={onToggleSpacecraftMode}
+            title="Toggle Spacecraft Mode"
+          >
+            {spacecraftMode ? '🚪 Exit Ship' : '🚀 Fly Ship'}
+          </button>
+          <div className="divider" />
+        </>
+      )}
+
       <button
         className={`primary ${isPlaying ? '' : 'active'}`}
         onClick={onTogglePlay}

@@ -48,6 +48,18 @@ impl Material {
     pub fn render_color(&self, particle: &Particle) -> Color {
         let base = self.color();
         
+        // Handle spaghettification effect - stretch is applied visually
+        if particle.stretch > 1.01 {
+            // Particle is being stretched - tint toward red/orange as it elongates
+            let stretch_factor = (particle.stretch - 1.0).min(1.0); // Normalize to 0-1
+            let tint_r = (200.0 * stretch_factor) as u8;
+            let tint_g = (80.0 * stretch_factor) as u8;
+            // Blend stretched particles toward warm colors
+            let new_r = ((base.r as f32 * (1.0 - stretch_factor * 0.5)) + tint_r as f32 * stretch_factor * 0.5) as u8;
+            let new_g = ((base.g as f32 * (1.0 - stretch_factor * 0.5)) + tint_g as f32 * stretch_factor * 0.5) as u8;
+            return Color::rgb(new_r.min(255), new_g.min(255), base.b);
+        }
+        
         match self {
             Material::Fire => {
                 // Fire flickers between orange and yellow
@@ -85,6 +97,22 @@ impl Material {
                 )
             }
             _ => base,
+        }
+    }
+    
+    /// Get stretch direction for rendering (returns normalized velocity direction)
+    pub fn stretch_direction(particle: &Particle) -> Option<(f32, f32)> {
+        if particle.stretch > 1.01 {
+            let (vx, vy) = particle.velocity;
+            let mag = (vx * vx + vy * vy).sqrt();
+            if mag > 0.01 {
+                Some((vx / mag, vy / mag))
+            } else {
+                // Default direction (toward black hole)
+                Some((0.0, 1.0))
+            }
+        } else {
+            None
         }
     }
 }

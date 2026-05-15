@@ -41,8 +41,9 @@ pub use crate::chunk::{Chunk, ChunkedGrid, ChunkPos, SpatialHash, GridSpatialHas
 pub use crate::gpu::{encode_material, decode_material, encode_grid, GpuSimulator, GpuStatus};
 pub use crate::simulation::Simulator;
 pub use crate::renderer::{Renderer, TerminalRenderer, Color};
-pub use crate::postprocessing::{PostProcessor, PostProcessingConfig, ColorGradingMode, ScreenShake};
+pub use crate::game_objects::{GameObject, GameObjectId, GameObjectType, GameObjectManager, Position, Velocity, SpecificProps, StarClass, StarProps, CelestialType, CelestialProps, ShipClass, SpacecraftProps, CometProps, NebulaType, NebulaProps};
 pub use crate::benchmark::{SpatialBenchmark, SpatialBenchmarkConfig, BenchmarkResult, run_spatial_benchmark};
+pub use crate::postprocessing::{PostProcessor, PostProcessingConfig, ColorGradingMode, ScreenShake};
 
 // GPU compute pipeline (optional feature)
 #[cfg(feature = "gpu")]
@@ -56,6 +57,7 @@ mod chunk;
 mod simulation;
 pub mod renderer;
 pub mod postprocessing;
+pub mod game_objects;
 
 // WASM-specific exports
 #[cfg(feature = "wasm")]

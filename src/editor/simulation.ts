@@ -1,7 +1,10 @@
 // FUL-5: Phase 6 - Canvas2D Simulation Renderer
-// This implements the physics visualization matching Rust's renderer.rs
+// FUL-35c: Added spacecraft support
 
 import { Material, MATERIALS } from './materials';
+import { Spacecraft, ShipClass, createSpacecraft, SHIP_CLASS_INFO } from './spacecraft';
+import { SpacecraftControl, setupKeyboardControls, generateSpacecraftId } from './spacecraftControl';
+import { SpacecraftRenderer } from './spacecraftRenderer';
 
 export interface Particle {
   material: Material;
@@ -10,6 +13,7 @@ export interface Particle {
   velocityX: number;
   velocityY: number;
   burning: boolean;
+  stretch: number; // Spaghettification stretch factor (1.0 = no stretch)
 }
 
 export interface Grid {
@@ -39,6 +43,16 @@ const MATERIAL_COLORS: Record<Material, [number, number, number]> = {
 function getParticleColor(particle: Particle, x: number, y: number): [number, number, number, number] {
   let [r, g, b] = MATERIAL_COLORS[particle.material];
   let a = 255;
+
+  // Handle spaghettification effect - particles stretch toward event horizon
+  if (particle.stretch > 1.01) {
+    const stretchFactor = Math.min(1, particle.stretch - 1.0);
+    // Tint stretched particles toward warm colors (red/orange)
+    const tintR = Math.floor(200 * stretchFactor);
+    const tintG = Math.floor(80 * stretchFactor);
+    r = Math.min(255, Math.floor(r * (1 - stretchFactor * 0.5) + tintR * stretchFactor * 0.5));
+    g = Math.min(255, Math.floor(g * (1 - stretchFactor * 0.5) + tintG * stretchFactor * 0.5));
+  }
 
   switch (particle.material) {
     case Material.Fire: {
@@ -86,6 +100,15 @@ function getParticleColor(particle: Particle, x: number, y: number): [number, nu
 
 export type OverlayMode = 'none' | 'temperature' | 'velocity';
 
+// Spacecraft mode interface
+export interface SpacecraftState {
+  playerShip: Spacecraft | null;
+  enemyShips: Spacecraft[];
+  control: SpacecraftControl | null;
+  cleanupControls: (() => void) | null;
+  isActive: boolean;
+}
+
 export class SimulationCanvas {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
@@ -100,12 +123,25 @@ export class SimulationCanvas {
   private blackHoles: Array<{ x: number; y: number; mass: number; consumed: number }> = [];
   private stats = { particlesConsumed: 0, totalMass: 0 };
 
+  // Spacecraft state
+  private spacecraftState: SpacecraftState = {
+    playerShip: null,
+    enemyShips: [],
+    control: null,
+    cleanupControls: null,
+    isActive: false,
+  };
+  private spacecraftRenderer: SpacecraftRenderer | null = null;
+
   constructor(canvas: HTMLCanvasElement, width: number, height: number, scale: number = 4) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d', { alpha: false })!;
     this.width = width;
     this.height = height;
     this.scale = scale;
+
+    // Initialize spacecraft renderer
+    this.spacecraftRenderer = new SpacecraftRenderer(this.ctx);
 
     // Set canvas size
     this.canvas.width = width * scale;
@@ -125,6 +161,7 @@ export class SimulationCanvas {
         velocityX: 0,
         velocityY: 0,
         burning: false,
+        stretch: 1.0, // Spaghettification stretch factor
       })),
     };
 
@@ -242,6 +279,9 @@ export class SimulationCanvas {
 
     // Update grid
     this.grid.particles = newState;
+
+    // Update spacecraft physics (FUL-35c)
+    this.updateSpacecraft();
   }
 
   private updateSand(state: Particle[], width: number, height: number, x: number, y: number, isAsh: boolean): void {
@@ -546,10 +586,10 @@ export class SimulationCanvas {
   }
 
   // Black hole mass constants
-  private readonly BLACK_HOLE_MASS = 100;
-  private readonly EVENT_HORIZON_RADIUS = 3;
-  private readonly INFLUENCE_RADIUS = 40;
-  private readonly GRAVITY_CONSTANT = 500;
+  private readonly BLACK_HOLE_MASS = 200;  // Increased for dramatic suction
+  private readonly EVENT_HORIZON_RADIUS = 4;  // Slightly larger
+  private readonly INFLUENCE_RADIUS = 60;  // Larger influence
+  private readonly GRAVITY_CONSTANT = 2500;  // Much stronger gravity
 
   private updateBlackHole(state: Particle[], width: number, height: number, x: number, y: number): void {
     const idx = y * width + x;
@@ -590,24 +630,39 @@ export class SimulationCanvas {
           state[neighborIdx].material = Material.Air;
         } else if (dist < this.INFLUENCE_RADIUS) {
           // Apply gravitational acceleration
-          const force = this.GRAVITY_CONSTANT * bh.mass / (distSq + 100);
+          const force = this.GRAVITY_CONSTANT * bh.mass / (distSq + 50);
           const ax = (dx / dist) * force;
           const ay = (dy / dist) * force;
           
-          // Update velocity with damping
-          neighbor.velocityX = neighbor.velocityX * 0.95 + ax * 0.05;
-          neighbor.velocityY = neighbor.velocityY * 0.95 + ay * 0.05;
+          // Update velocity with less damping for faster acceleration
+          neighbor.velocityX = neighbor.velocityX * 0.9 + ax * 0.1;
+          neighbor.velocityY = neighbor.velocityY * 0.9 + ay * 0.1;
           
-          // Clamp velocity
-          const maxVel = 5;
+          // Increase max velocity for dramatic suction effect
+          const maxVel = 15;
           const vel = Math.sqrt(neighbor.velocityX ** 2 + neighbor.velocityY ** 2);
           if (vel > maxVel) {
             neighbor.velocityX = (neighbor.velocityX / vel) * maxVel;
             neighbor.velocityY = (neighbor.velocityY / vel) * maxVel;
           }
           
-          // Apply velocity-based movement if significant
-          if (vel > 0.5) {
+          // Tidal force - spaghettification near event horizon
+          const tidalThreshold = this.EVENT_HORIZON_RADIUS * 2;
+          if (dist < tidalThreshold && dist > this.EVENT_HORIZON_RADIUS) {
+            const distFromHorizon = dist - this.EVENT_HORIZON_RADIUS;
+            const tidalFactor = this.getStretchFactor(distFromHorizon, this.EVENT_HORIZON_RADIUS);
+            
+            // Only apply stretch to materials that can stretch
+            if (tidalFactor > 0.05 && this.canStretch(neighbor.material)) {
+              neighbor.stretch = tidalFactor;
+              // Add extra velocity pull toward black hole when stretched
+              neighbor.velocityX += (dx / dist) * tidalFactor * 0.5;
+              neighbor.velocityY += (dy / dist) * tidalFactor * 0.5;
+            }
+          }
+          
+          // Apply velocity-based movement if significant (lowered threshold)
+          if (vel > 0.3) {
             const moveX = Math.round(neighbor.velocityX);
             const moveY = Math.round(neighbor.velocityY);
             
@@ -618,8 +673,8 @@ export class SimulationCanvas {
               if (state[targetY * width + targetX].material === Material.Air) {
                 state[targetY * width + targetX] = { ...neighbor };
                 state[neighborIdx].material = Material.Air;
-                state[targetY * width + targetX].velocityX *= 0.9;
-                state[targetY * width + targetX].velocityY *= 0.9;
+                state[targetY * width + targetX].velocityX *= 0.85;
+                state[targetY * width + targetX].velocityY *= 0.85;
               }
             }
           }
@@ -641,7 +696,8 @@ export class SimulationCanvas {
           lifetime: 30 + Math.floor(Math.random() * 20),
           velocityX: Math.cos(angle) * 2,
           velocityY: Math.sin(angle) * 2,
-          burning: false
+          burning: false,
+          stretch: 1.0,
         };
       }
     }
@@ -661,6 +717,21 @@ export class SimulationCanvas {
       case Material.Ash: return 1.0;
       default: return 1.0;
     }
+  }
+  
+  // Calculate spaghettification stretch factor (matches Rust implementation)
+  private getStretchFactor(distFromHorizon: number, horizonRadius: number): number {
+    if (distFromHorizon <= 0 || horizonRadius <= 0) return 1.0;
+    const proximity = horizonRadius / (horizonRadius + distFromHorizon);
+    return proximity * proximity * 2.0;
+  }
+  
+  // Check if material can be stretched (spaghettified)
+  private canStretch(material: Material): boolean {
+    return [
+      Material.Sand, Material.Water, Material.Oil, 
+      Material.Stone, Material.Wood, Material.Ice, Material.Lava
+    ].includes(material);
   }
 
   private moveDown(state: Particle[], width: number, height: number, x: number, y: number, idx: number): boolean {
@@ -730,6 +801,24 @@ export class SimulationCanvas {
     }
 
     this.ctx.putImageData(this.imageData, 0, 0);
+
+    // Render spacecraft on top of particles
+    this.renderSpacecraft();
+  }
+
+  // Render all spacecraft
+  private renderSpacecraft(): void {
+    if (!this.spacecraftRenderer || !this.spacecraftState.isActive) return;
+
+    // Render enemy ships
+    for (const ship of this.spacecraftState.enemyShips) {
+      this.spacecraftRenderer.render(ship, this.scale);
+    }
+
+    // Render player ship on top
+    if (this.spacecraftState.playerShip) {
+      this.spacecraftRenderer.render(this.spacecraftState.playerShip, this.scale);
+    }
   }
 
   // Spawn particles in a circular brush pattern
@@ -873,5 +962,197 @@ export class SimulationCanvas {
         }
         break;
     }
+  }
+
+  // ============================================
+  // FUL-35c: Spacecraft Control & Game Mechanics
+  // ============================================
+
+  // Activate spacecraft game mode
+  activateSpacecraftMode(shipClass: ShipClass = ShipClass.Fighter): void {
+    if (this.spacecraftState.isActive) return;
+
+    // Create player ship at center
+    const centerX = (this.width * this.scale) / 2;
+    const centerY = (this.height * this.scale) / 2;
+    const playerShip = createSpacecraft(
+      generateSpacecraftId(),
+      { x: centerX, y: centerY },
+      shipClass,
+      true // isPlayer
+    );
+
+    this.spacecraftState.playerShip = playerShip;
+
+    // Create spacecraft control
+    this.spacecraftState.control = new SpacecraftControl(
+      playerShip,
+      (updatedShip) => {
+        this.spacecraftState.playerShip = updatedShip;
+      }
+    );
+
+    // Setup keyboard controls
+    if (this.spacecraftState.control) {
+      this.spacecraftState.cleanupControls = setupKeyboardControls(this.spacecraftState.control);
+    }
+
+    this.spacecraftState.isActive = true;
+  }
+
+  // Deactivate spacecraft game mode
+  deactivateSpacecraftMode(): void {
+    if (!this.spacecraftState.isActive) return;
+
+    // Cleanup keyboard controls
+    if (this.spacecraftState.cleanupControls) {
+      this.spacecraftState.cleanupControls();
+      this.spacecraftState.cleanupControls = null;
+    }
+
+    this.spacecraftState.control = null;
+    this.spacecraftState.playerShip = null;
+    this.spacecraftState.enemyShips = [];
+    this.spacecraftState.isActive = false;
+  }
+
+  // Check if spacecraft mode is active
+  isSpacecraftModeActive(): boolean {
+    return this.spacecraftState.isActive;
+  }
+
+  // Get player spacecraft
+  getPlayerSpacecraft(): Spacecraft | null {
+    return this.spacecraftState.playerShip;
+  }
+
+  // Get spacecraft control
+  getSpacecraftControl(): SpacecraftControl | null {
+    return this.spacecraftState.control;
+  }
+
+  // Spawn an enemy ship
+  spawnEnemyShip(shipClass: ShipClass, x: number, y: number): Spacecraft {
+    const enemy = createSpacecraft(
+      generateSpacecraftId(),
+      { x, y },
+      shipClass,
+      false // not player
+    );
+    this.spacecraftState.enemyShips.push(enemy);
+    return enemy;
+  }
+
+  // Update spacecraft physics (call this in tick)
+  updateSpacecraft(deltaTime: number = 1): void {
+    if (!this.spacecraftState.isActive || !this.spacecraftState.control) return;
+
+    // Update player ship physics
+    this.spacecraftState.control.tick(deltaTime);
+
+    // Update enemy ships (simple AI - move toward player or orbit)
+    for (const enemy of this.spacecraftState.enemyShips) {
+      if (enemy.isDestroyed) continue;
+
+      if (this.spacecraftState.playerShip && !this.spacecraftState.playerShip.isDestroyed) {
+        // Simple orbit AI
+        const dx = this.spacecraftState.playerShip.position.x - enemy.position.x;
+        const dy = this.spacecraftState.playerShip.position.y - enemy.position.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist > 100) {
+          // Move toward player
+          enemy.velocity.x += (dx / dist) * 0.02;
+          enemy.velocity.y += (dy / dist) * 0.02;
+        } else if (dist < 50) {
+          // Too close, move away
+          enemy.velocity.x -= (dx / dist) * 0.02;
+          enemy.velocity.y -= (dy / dist) * 0.02;
+        } else {
+          // Orbit
+          enemy.velocity.x += (-dy / dist) * 0.01;
+          enemy.velocity.y += (dx / dist) * 0.01;
+        }
+
+        // Update angle to face player
+        enemy.angle = Math.atan2(dy, dx) + Math.PI / 2;
+      }
+
+      // Apply drag
+      enemy.velocity.x *= 0.99;
+      enemy.velocity.y *= 0.99;
+
+      // Clamp velocity
+      const maxVel = 5;
+      const speed = Math.sqrt(enemy.velocity.x ** 2 + enemy.velocity.y ** 2);
+      if (speed > maxVel) {
+        enemy.velocity.x = (enemy.velocity.x / speed) * maxVel;
+        enemy.velocity.y = (enemy.velocity.y / speed) * maxVel;
+      }
+
+      // Update position
+      enemy.position.x += enemy.velocity.x * deltaTime;
+      enemy.position.y += enemy.velocity.y * deltaTime;
+
+      // Keep in bounds
+      const margin = 30;
+      const canvasWidth = this.width * this.scale;
+      const canvasHeight = this.height * this.scale;
+
+      if (enemy.position.x < margin) enemy.velocity.x += 0.1;
+      if (enemy.position.x > canvasWidth - margin) enemy.velocity.x -= 0.1;
+      if (enemy.position.y < margin) enemy.velocity.y += 0.1;
+      if (enemy.position.y > canvasHeight - margin) enemy.velocity.y -= 0.1;
+    }
+
+    // Check player-enemy collisions
+    if (this.spacecraftState.playerShip && !this.spacecraftState.playerShip.isDestroyed) {
+      for (const enemy of this.spacecraftState.enemyShips) {
+        if (enemy.isDestroyed) continue;
+
+        const dx = this.spacecraftState.playerShip.position.x - enemy.position.x;
+        const dy = this.spacecraftState.playerShip.position.y - enemy.position.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist < 24) { // Collision
+          this.spacecraftState.control?.applyDamage(10);
+          enemy.props.hull -= 5;
+          if (enemy.props.hull <= 0) {
+            enemy.isDestroyed = true;
+          }
+        }
+      }
+    }
+
+    // Keep player in bounds
+    if (this.spacecraftState.playerShip && !this.spacecraftState.playerShip.isDestroyed) {
+      const margin = 20;
+      const canvasWidth = this.width * this.scale;
+      const canvasHeight = this.height * this.scale;
+
+      // Soft boundary - push back toward center
+      if (this.spacecraftState.playerShip.position.x < margin) {
+        this.spacecraftState.playerShip.velocity.x += 0.2;
+      }
+      if (this.spacecraftState.playerShip.position.x > canvasWidth - margin) {
+        this.spacecraftState.playerShip.velocity.x -= 0.2;
+      }
+      if (this.spacecraftState.playerShip.position.y < margin) {
+        this.spacecraftState.playerShip.velocity.y += 0.2;
+      }
+      if (this.spacecraftState.playerShip.position.y > canvasHeight - margin) {
+        this.spacecraftState.playerShip.velocity.y -= 0.2;
+      }
+    }
+  }
+
+  // Get all alive enemy ships
+  getEnemySpacecraft(): Spacecraft[] {
+    return this.spacecraftState.enemyShips.filter(s => !s.isDestroyed);
+  }
+
+  // Remove destroyed ships
+  cleanupDestroyedShips(): void {
+    this.spacecraftState.enemyShips = this.spacecraftState.enemyShips.filter(s => !s.isDestroyed);
   }
 }

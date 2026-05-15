@@ -586,6 +586,7 @@ impl Simulator {
         // Collect particles that need to move
         let mut to_move: Vec<(usize, usize, (f32, f32))> = Vec::new();
         let mut to_remove: Vec<(usize, usize)> = Vec::new();
+        let mut to_stretch: Vec<(usize, usize, (f32, f32, f32))> = Vec::new(); // x, y, (dir_x, dir_y, factor)
         
         for y in 0..height {
             for x in 0..width {
@@ -624,19 +625,30 @@ impl Simulator {
                         
                         total_fx += force * dir_x * mass_factor;
                         total_fy += force * dir_y * mass_factor;
+                        
+                        // Tidal force - spaghettification near event horizon
+                        let tidal_threshold = props.event_horizon_radius * 2.0;
+                        if dist < tidal_threshold && dist > props.event_horizon_radius {
+                            let dist_from_horizon = dist - props.event_horizon_radius;
+                            let tidal_factor = particle.material.stretch_factor(dist_from_horizon, props.event_horizon_radius);
+                            
+                            if tidal_factor > 0.05 && particle.material.can_stretch() {
+                                to_stretch.push((x, y, (dir_x, dir_y, tidal_factor)));
+                            }
+                        }
                     }
                     
-                    if total_fx.abs() > 0.01 || total_fy.abs() > 0.01 {
+                    if total_fx.abs() > 0.1 || total_fy.abs() > 0.1 {
                         to_move.push((x, y, (total_fx, total_fy)));
                     }
                 }
             }
         }
         
-        // Apply movements
+        // Apply movements with increased max velocity for dramatic suction
         for (x, y, (fx, fy)) in to_move {
-            let vx = fx.clamp(-5.0, 5.0);
-            let vy = fy.clamp(-5.0, 5.0);
+            let vx = fx.clamp(-15.0, 15.0);
+            let vy = fy.clamp(-15.0, 15.0);
             
             let target_x = (x as f32 + vx).round() as usize;
             let target_y = (y as f32 + vy).round() as usize;
@@ -645,6 +657,16 @@ impl Simulator {
                 if grid.in_bounds(target_x, target_y) && grid.is_empty(target_x, target_y) {
                     grid.swap(x, y, target_x, target_y);
                 }
+            }
+        }
+        
+        // Apply spaghettification stretch
+        for (x, y, (dir_x, dir_y, factor)) in to_stretch {
+            if let Some(mut p) = grid.get(x, y) {
+                p.stretch = factor;
+                p.velocity.0 += dir_x * factor;
+                p.velocity.1 += dir_y * factor;
+                let _ = grid.set(x, y, p);
             }
         }
         
@@ -730,7 +752,7 @@ impl Simulator {
         
         // Track particles that need to be consumed or stretched
         let mut consumed: Vec<(usize, usize)> = Vec::new();
-        let mut stretched: Vec<(usize, usize, (f32, f32))> = Vec::new();
+        let mut stretched: Vec<(usize, usize, (f32, f32, f32))> = Vec::new(); // x, y, (dir_x, dir_y, factor)
         
         for y in 0..height {
             for x in 0..width {
@@ -782,12 +804,13 @@ impl Simulator {
                         // Tidal force - spaghettification near event horizon
                         let tidal_threshold = props.event_horizon_radius * 2.0;
                         if dist < tidal_threshold && dist > props.event_horizon_radius {
-                            // Calculate tidal stretch
-                            let tidal_factor = (1.0 - dist / tidal_threshold) * props.tidal_strength;
-                            // Stretch along the radial direction (pull ends toward BH)
-                            // This would elongate the particle visually
-                            if tidal_factor > 0.1 {
-                                stretched.push((x, y, (dir_x * tidal_factor, dir_y * tidal_factor)));
+                            // Calculate tidal stretch using particle's stretch_factor method
+                            let dist_from_horizon = dist - props.event_horizon_radius;
+                            let tidal_factor = particle.material.stretch_factor(dist_from_horizon, props.event_horizon_radius);
+                            
+                            // Only apply if stretch is significant and particle can stretch
+                            if tidal_factor > 0.05 && particle.material.can_stretch() {
+                                stretched.push((x, y, (dir_x, dir_y, tidal_factor)));
                             }
                         }
                     }
@@ -796,8 +819,8 @@ impl Simulator {
                     particle.velocity.0 += total_fx;
                     particle.velocity.1 += total_fy;
                     
-                    // Clamp velocity to prevent extreme speeds
-                    let max_vel = 5.0;
+                    // Increase max velocity for dramatic suction effect
+                    let max_vel = 15.0;
                     let vel_mag = (particle.velocity.0 * particle.velocity.0 + 
                                   particle.velocity.1 * particle.velocity.1).sqrt();
                     if vel_mag > max_vel {
@@ -808,16 +831,16 @@ impl Simulator {
                     
                     // Apply velocity-based position update for black hole gravity
                     // Update position directly in grid if particle should move
-                    let vx = total_fx;
-                    let vy = total_fy;
+                    let vx = particle.velocity.0;
+                    let vy = particle.velocity.1;
                     
-                    // Only move if velocity is significant
-                    if vx.abs() > 0.01 || vy.abs() > 0.01 {
+                    // Move if velocity is significant (lowered threshold for faster response)
+                    if vx.abs() > 0.1 || vy.abs() > 0.1 {
                         if let Some(mut p) = grid.get(x, y) {
-                            p.velocity.0 = vx.clamp(-5.0, 5.0);
-                            p.velocity.1 = vy.clamp(-5.0, 5.0);
+                            p.velocity.0 = vx.clamp(-15.0, 15.0);
+                            p.velocity.1 = vy.clamp(-15.0, 15.0);
                             
-                            // Calculate new position
+                            // Calculate new position (use velocity for more dramatic movement)
                             let target_x = x as f32 + p.velocity.0;
                             let target_y = y as f32 + p.velocity.1;
                             let new_x = target_x.round() as usize;
@@ -851,8 +874,12 @@ impl Simulator {
         // Apply visual stretch effect (stored in particle for renderer)
         for (x, y, stretch) in stretched {
             if let Some(mut p) = grid.get(x, y) {
-                p.velocity.0 += stretch.0;
-                p.velocity.1 += stretch.1;
+                // stretch is (dir_x, dir_y, factor)
+                // Store stretch magnitude in the particle's stretch field
+                p.stretch = stretch.2;
+                // Apply directional velocity influence
+                p.velocity.0 += stretch.0 * stretch.2 * 0.5;
+                p.velocity.1 += stretch.1 * stretch.2 * 0.5;
                 let _ = grid.set(x, y, p);
             }
         }
@@ -1939,51 +1966,52 @@ mod tests {
         
         // Place black hole at (40, 49) - bottom right corner
         // Place sand at (5, 48) - far left, one row above floor
-        // Distance = 35, which is > influence_radius 30, so minimal effect
-        // This tests that particles far from BH are barely affected
+        // Distance = 35, which is < influence_radius 50, so should be affected
         
         // Use stone as base to prevent sand falling
         for x in 0..50 {
             grid.set(x, 49, Particle::new(Material::Stone)); // floor
         }
         grid.set(40, 49, Particle::new(Material::BlackHole)); // BH on floor
-        grid.spawn(5, 48, Material::Sand); // sand one row above floor
-        
-        // Check initial position
-        let initial_x = (0..50).find(|&x| {
-            grid.get(x, 48).map(|p| p.material == Material::Sand).unwrap_or(false)
-        });
-        assert!(initial_x.is_some(), "Sand should exist initially");
+        let initial_pos = grid.spawn(5, 48, Material::Sand); // sand one row above floor
+        assert!(initial_pos, "Sand should spawn initially");
         
         let mut sim = Simulator::new();
         
-        // Run a few ticks
-        for _ in 0..10 {
+        // Run ticks and track sand position
+        let mut sand_x = 5;
+        let mut sand_y = 48;
+        let mut sand_moved = false;
+        
+        for tick in 0..100 {
             sim.tick(&mut grid);
+            
+            // Find sand position
+            let mut found = false;
+            for y in 0..50 {
+                for x in 0..50 {
+                    if grid.get(x, y).map(|p| p.material == Material::Sand).unwrap_or(false) {
+                        if x != sand_x || y != sand_y {
+                            sand_moved = true;
+                        }
+                        sand_x = x;
+                        sand_y = y;
+                        found = true;
+                    }
+                }
+            }
+            
+            // Sand was consumed - test passes
+            if !found {
+                return;
+            }
         }
         
-        // Sand should still exist (distance 35 > influence 30, minimal movement)
-        let sand_exists = (0..50).any(|y| (0..50).any(|x| 
-            grid.get(x, y).map(|p| p.material == Material::Sand).unwrap_or(false)
-        ));
-        
-        assert!(sand_exists, "Sand should still exist - too far from BH for immediate effect");
-        
-        // Run more ticks
-        for _ in 0..90 {
-            sim.tick(&mut grid);
-        }
-        
-        // After many ticks, either sand moved toward BH or was consumed
-        // Either way, the gravity system is working
-        let final_sand_exists = (0..50).any(|y| (0..50).any(|x| 
-            grid.get(x, y).map(|p| p.material == Material::Sand).unwrap_or(false)
-        ));
-        
-        // Test passes if sand exists (and likely moved) or was consumed (BH works)
-        // The important thing is the gravity system is affecting particles
-        assert!(final_sand_exists || !grid.get(40, 49).map(|p| p.material == Material::BlackHole).unwrap_or(false) || true,
-            "Sand affected by black hole gravity");
+        // With increased gravity, sand should have moved toward the black hole
+        // Black hole is at (40, 49), sand starts at (5, 48)
+        // Should move right (x should increase) toward the black hole
+        assert!(sand_moved, "Sand should move toward black hole with increased gravity");
+        assert!(sand_x > 5, "Sand should move right (toward BH at x=40)");
     }
     
     #[test]
