@@ -1224,3 +1224,224 @@ body {
   border: 1px solid var(--border);
   font-family: monospace;
 }
+/* FUL-48: Game-only styles */
+.game-container {
+  width: 100vw;
+  height: 100vh;
+  position: relative;
+  overflow: hidden;
+  background: #0a0a1a;
+}
+
+.canvas-wrapper {
+  position: absolute;
+  inset: 0;
+}
+
+.canvas-wrapper canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* HUD styles */
+.hud-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.hud-panel {
+  position: absolute;
+  background: rgba(10, 10, 26, 0.85);
+  border-radius: 8px;
+  padding: 1rem;
+  backdrop-filter: blur(4px);
+}
+
+.hud-top-left {
+  top: 1rem;
+  left: 1rem;
+}
+
+.hud-top-right {
+  top: 1rem;
+  right: 1rem;
+}
+
+.hud-bottom {
+  bottom: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.hud-section {
+  margin-bottom: 0.75rem;
+}
+
+.hud-label {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.7rem;
+  color: #a78bfa;
+  letter-spacing: 0.1em;
+  margin-bottom: 0.25rem;
+}
+
+.hud-value {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 1.2rem;
+  color: #fff;
+}
+
+.hud-value-large {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 1.5rem;
+  color: #fbbf24;
+  text-shadow: 0 0 10px rgba(251, 191, 36, 0.5);
+}
+
+.hud-gun-status {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.gun-mode {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.9rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  background: rgba(99, 102, 241, 0.3);
+}
+
+.gun-mode.attract { color: #4ade80; }
+.gun-mode.repel { color: #f87171; }
+.gun-mode.vortex { color: #a78bfa; }
+
+.gun-active {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+.gun-active.active {
+  color: #4ade80;
+}
+
+.upgrade-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.upgrade-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.upgrade-icon {
+  width: 20px;
+  text-align: center;
+}
+
+.upgrade-level-bar {
+  width: 60px;
+  height: 6px;
+  background: rgba(99, 102, 241, 0.3);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.upgrade-level-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #6366f1, #a78bfa);
+  transition: width 0.3s ease;
+}
+
+.upgrade-level-text {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.65rem;
+  color: #9ca3af;
+}
+
+.hud-view-upgrades {
+  pointer-events: auto;
+  margin-top: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  background: rgba(99, 102, 241, 0.2);
+  border: 1px solid #6366f1;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.hud-view-upgrades:hover {
+  background: rgba(99, 102, 241, 0.4);
+}
+
+.hud-controls-hint {
+  display: flex;
+  gap: 1rem;
+  font-family: 'Segoe UI', sans-serif;
+  font-size: 0.75rem;
+  color: #9ca3af;
+}
+
+.hint-key {
+  padding: 0.15rem 0.35rem;
+  background: rgba(99, 102, 241, 0.2);
+  border-radius: 3px;
+  color: #fbbf24;
+  font-weight: 600;
+  margin-right: 0.25rem;
+}
+
+/* Compact HUD */
+.hud-compact {
+  position: absolute;
+  top: 0.5rem;
+  left: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background: rgba(10, 10, 26, 0.8);
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+}
+
+.hud-score-compact,
+.hud-points-compact {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.score-label,
+.points-label {
+  font-size: 0.6rem;
+  color: #a78bfa;
+}
+
+.score-value,
+.points-value {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 1rem;
+  color: #fff;
+}
+
+.hud-upgrade-btn {
+  width: 28px;
+  height: 28px;
+  background: rgba(99, 102, 241, 0.3);
+  border: 1px solid #6366f1;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.hud-upgrade-btn:hover {
+  background: rgba(99, 102, 241, 0.5);
+}

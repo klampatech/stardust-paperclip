@@ -10,6 +10,7 @@ import { SpacecraftControl, setupKeyboardControls, generateSpacecraftId } from '
 import { SpacecraftRenderer } from './spacecraftRenderer';
 import { GravityGunState } from './gravityGun';
 import { renderGravityGunEffect } from './gravityGun';
+import { DebrisManager } from './debrisManager';
 
 // Material colors from Rust implementation
 const MATERIAL_COLORS: [number, number, number][] = [
@@ -95,26 +96,26 @@ export class SimulationCanvas {
   private scale: number;           // Pixel scale
   private canvasWidth: number;     // Cached: width * scale
   private canvasHeight: number;    // Cached: height * scale
-  
+
   // Typed array grid (performance: no objects, no GC)
   // Each cell: [material, temp, lifetime, vx, vy, flags, stretch]
   private grid: Float32Array;
-  
+
   // Image data
   private imageData: ImageData;
   private pixels: Uint8ClampedArray;
-  
+
   // Dirty rect tracking
   private dirtyRects: DirtyRect[] = [];
   private currentDirty: DirtyRect = { x: this.width || 0, y: this.height || 0, w: 0, h: 0 };
-  
+
   // Black hole tracking
   private blackHoles: Array<{ x: number; y: number; mass: number; consumed: number }> = [];
-  private stats = { particlesConsumed: 0, totalMass: 0 };
-  
+  private stats = { particlesConsumed: 0, totalMass: 0, debrisCollected: 0 };
+
   // Overlay mode
   private overlayMode: OverlayMode = 'none';
-  
+
   // FUL-35c: Spacecraft mode
   private spacecraftState: SpacecraftState = {
     playerShip: null,
@@ -124,14 +125,20 @@ export class SimulationCanvas {
     isActive: false,
   };
   private spacecraftRenderer: SpacecraftRenderer | null = null;
-  
+
   // FUL-45: Gravity gun state for interactive particle manipulation
   public gravityGunState: GravityGunState | null = null;
-  
+
+  // FUL-47.2: Callback for debris collection events
+  public onDebrisCollected?: (debris: import('./debrisManager').DebrisObject, points: number) => void;
+
   // FUL-45: Parallax starfield for space game
   private starLayers: Array<{ x: number; y: number; size: number; brightness: number; parallax: number }> = [];
   private starLayerCount = 3;
   private starsPerLayer = 80;
+
+  // FUL-47.2: Debris manager for collectible objects
+  private debrisManager: DebrisManager | null = null;
 
   // Black hole constants (matching Rust)
   private readonly BLACK_HOLE_MASS = 200;
@@ -145,7 +152,7 @@ export class SimulationCanvas {
     this.width = width;
     this.height = height;
     this.scale = scale;
-    
+
     // Cache canvas dimensions
     this.canvasWidth = width * scale;
     this.canvasHeight = height * scale;
@@ -167,18 +174,27 @@ export class SimulationCanvas {
     // Initialize image data
     this.imageData = this.ctx.createImageData(this.canvasWidth, this.canvasHeight);
     this.pixels = this.imageData.data;
-    
+
     // FUL-45: Initialize parallax starfield
     this.initStarfield();
+
+    // FUL-47.2: Initialize debris manager
+    this.debrisManager = new DebrisManager(this.canvasWidth, this.canvasHeight);
+
+    // Setup debris collection callback
+    this.debrisManager.onDebrisCollected = (debris, points) => {
+      this.stats.debrisCollected += 1;
+      this.stats.totalMass += debris.size * 0.5;
+    };
   }
-  
+
   private initStarfield(): void {
     this.starLayers = [];
     for (let layer = 0; layer < this.starLayerCount; layer++) {
       const parallax = 0.1 + layer * 0.15; // 0.1, 0.25, 0.4
       const count = this.starsPerLayer - layer * 15; // Fewer stars in foreground
       const sizeRange = 1 + layer * 0.5; // Larger stars in front
-      
+
       for (let i = 0; i < count; i++) {
         this.starLayers.push({
           x: Math.random() * this.canvasWidth * 2 - this.canvasWidth * 0.5,
@@ -190,12 +206,12 @@ export class SimulationCanvas {
       }
     }
   }
-  
+
   private renderStarfield(): void {
     // Use player ship or black hole position as parallax anchor
     let anchorX = this.canvasWidth / 2;
     let anchorY = this.canvasHeight / 2;
-    
+
     if (this.spacecraftState.playerShip) {
       anchorX = this.spacecraftState.playerShip.position.x;
       anchorY = this.spacecraftState.playerShip.position.y;
@@ -203,29 +219,29 @@ export class SimulationCanvas {
       anchorX = this.blackHoles[0].x;
       anchorY = this.blackHoles[0].y;
     }
-    
+
     const offsetX = anchorX - this.canvasWidth / 2;
     const offsetY = anchorY - this.canvasHeight / 2;
-    
+
     for (const star of this.starLayers) {
       // Apply parallax offset
       const sx = star.x - offsetX * star.parallax;
       const sy = star.y - offsetY * star.parallax;
-      
+
       // Wrap stars around screen
       const wx = ((sx % this.canvasWidth) + this.canvasWidth) % this.canvasWidth;
       const wy = ((sy % this.canvasHeight) + this.canvasHeight) % this.canvasHeight;
-      
+
       // Draw star with size-based brightness
       const baseAlpha = Math.floor(star.brightness * 200);
       const size = Math.max(1, Math.round(star.size));
-      
+
       // Simple circle star
       this.ctx.fillStyle = `rgba(255, 255, 255, ${baseAlpha / 255})`;
       this.ctx.beginPath();
       this.ctx.arc(wx, wy, size * 0.5, 0, Math.PI * 2);
       this.ctx.fill();
-      
+
       // Add glow for larger stars
       if (size > 1.5) {
         this.ctx.fillStyle = `rgba(200, 220, 255, ${(baseAlpha / 255) * 0.3})`;
@@ -268,7 +284,7 @@ export class SimulationCanvas {
     if (!this.inBounds(x, y)) return;
     const idx = (y * this.width + x) * PARTICLE_STRIDE;
     this.grid[idx] = material;
-    
+
     // Initialize lifetime based on material
     if (material === Material.Fire) {
       this.grid[idx + 2] = 30 + Math.random() * 20;
@@ -318,7 +334,7 @@ export class SimulationCanvas {
     const scale = this.scale;
     const px = x * scale;
     const py = y * scale;
-    
+
     // Extend current dirty rect if adjacent, otherwise start new one
     if (this.currentDirty.w === 0) {
       this.currentDirty = { x: px, y: py, w: scale, h: scale };
@@ -350,30 +366,30 @@ export class SimulationCanvas {
     const { width, height, grid } = this;
     const air = Material.Air;
     const fire = Material.Fire;
-    
+
     let updateCount = 0;
 
     // Process from bottom to top
     for (let y = height - 2; y >= 0; y--) {
       // Randomize left-right order to prevent bias
       const leftFirst = Math.random() < 0.5;
-      
+
       for (let xi = 0; xi < width; xi++) {
         const x = leftFirst ? xi : width - 1 - xi;
         const idx = (y * width + x) * PARTICLE_STRIDE;
         const material = grid[idx];
-        
+
         if (material === air) continue;
-        
+
         // Inline material behavior (no function call overhead)
         const props = MATERIAL_PROPS[material];
-        
+
         if (props.isStatic) continue;
-        
+
         // Sand-like materials
         if (material === Material.Sand || material === Material.Ash || material === Material.Ice) {
           if (this.moveDownFast(grid, width, height, x, y, air)) continue;
-          
+
           // Diagonal fall
           const r = Math.random();
           if (r < 0.5) {
@@ -393,7 +409,7 @@ export class SimulationCanvas {
         // Water-like materials
         else if (material === Material.Water || material === Material.Oil || material === Material.Lava) {
           if (this.moveDownFast(grid, width, height, x, y, air)) continue;
-          
+
           // Diagonal
           const dl = x > 0 && grid[((y + 1) * width + (x - 1)) * PARTICLE_STRIDE] === air;
           const dr = x + 1 < width && grid[((y + 1) * width + (x + 1)) * PARTICLE_STRIDE] === air;
@@ -405,7 +421,7 @@ export class SimulationCanvas {
             }
             continue;
           }
-          
+
           // Horizontal flow
           if (Math.random() < 0.7) {
             const fl = x > 0 && grid[(y * width + (x - 1)) * PARTICLE_STRIDE] === air;
@@ -418,7 +434,7 @@ export class SimulationCanvas {
         // Fire
         else if (material === fire) {
           grid[idx + 2]--; // Decrease lifetime
-          
+
           // Extinguish in water
           for (let dy = -1; dy <= 1; dy++) {
             for (let dx = -1; dx <= 1; dx++) {
@@ -434,14 +450,14 @@ export class SimulationCanvas {
               }
             }
           }
-          
+
           // Rise
           if (y > 0 && grid[((y - 1) * width + x) * PARTICLE_STRIDE] === air && Math.random() < 0.7) {
             this.swapCells(x, y, x, y - 1);
             this.markDirty(x, y);
             this.markDirty(x, y - 1);
           }
-          
+
           // Die
           if (grid[idx + 2] <= 0) {
             this.setMaterial(x, y, Material.Smoke);
@@ -452,13 +468,13 @@ export class SimulationCanvas {
         // Gas (smoke/steam)
         else if (material === Material.Smoke || material === Material.Steam) {
           grid[idx + 2]--; // Decrease lifetime
-          
+
           if (grid[idx + 2] <= 0) {
             this.setMaterial(x, y, air);
             this.markDirty(x, y);
             continue;
           }
-          
+
           // Rise faster for steam
           const riseSpeed = material === Material.Steam ? 0.9 : 0.7;
           if (y > 0 && grid[((y - 1) * width + x) * PARTICLE_STRIDE] === air && Math.random() < riseSpeed) {
@@ -476,6 +492,11 @@ export class SimulationCanvas {
 
     // FUL-35c: Update spacecraft physics
     this.updateSpacecraft();
+
+    // FUL-47.2: Update debris physics and spawning
+    if (this.debrisManager) {
+      this.debrisManager.tick();
+    }
   }
 
   private moveDownFast(grid: Float32Array, width: number, height: number, x: number, y: number, air: number): boolean {
@@ -494,7 +515,7 @@ export class SimulationCanvas {
     const i1 = (y1 * this.width + x1) * PARTICLE_STRIDE;
     const i2 = (y2 * this.width + x2) * PARTICLE_STRIDE;
     const grid = this.grid;
-    
+
     // Swap 7 values
     for (let i = 0; i < PARTICLE_STRIDE; i++) {
       const tmp = grid[i1 + i];
@@ -505,7 +526,7 @@ export class SimulationCanvas {
 
   private updateBlackHoleFast(grid: Float32Array, width: number, height: number, x: number, y: number): void {
     const idx = (y * width + x) * PARTICLE_STRIDE;
-    
+
     // Find or create black hole entry
     let bh = this.blackHoles.find(b => b.x === x && b.y === y);
     if (!bh) {
@@ -520,16 +541,16 @@ export class SimulationCanvas {
         const nx = x + dx;
         const ny = y + dy;
         if (!this.inBounds(nx, ny)) continue;
-        
+
         const nidx = (ny * width + nx) * PARTICLE_STRIDE;
         const mat = grid[nidx];
-        
+
         // Skip air, static materials, other black holes
         if (mat === Material.Air || mat === Material.Stone || mat === Material.Wood || mat === Material.BlackHole) continue;
-        
+
         const distSq = dx * dx + dy * dy;
         const dist = Math.sqrt(distSq);
-        
+
         if (dist < this.EVENT_HORIZON_RADIUS) {
           // Consume
           this.stats.particlesConsumed++;
@@ -542,14 +563,14 @@ export class SimulationCanvas {
           const force = this.GRAVITY_CONSTANT * bh.mass / (distSq + 50);
           grid[nidx + 3] = grid[nidx + 3] * 0.9 + (dx / dist) * force * 0.1;
           grid[nidx + 4] = grid[nidx + 4] * 0.9 + (dy / dist) * force * 0.1;
-          
+
           // Clamp velocity
           const vel = Math.sqrt(grid[nidx + 3] ** 2 + grid[nidx + 4] ** 2);
           if (vel > 15) {
             grid[nidx + 3] = (grid[nidx + 3] / vel) * 15;
             grid[nidx + 4] = (grid[nidx + 4] / vel) * 15;
           }
-          
+
           // Spaghettification near event horizon
           const tidalThreshold = this.EVENT_HORIZON_RADIUS * 2;
           if (dist < tidalThreshold && dist > this.EVENT_HORIZON_RADIUS) {
@@ -559,17 +580,17 @@ export class SimulationCanvas {
               grid[nidx + 6] = tidalFactor;
             }
           }
-          
+
           // Apply velocity movement
           if (vel > 0.3) {
             const moveX = Math.round(grid[nidx + 3]);
             const moveY = Math.round(grid[nidx + 4]);
-            
+
             if (moveX !== 0 || moveY !== 0) {
               const targetX = Math.max(0, Math.min(width - 1, nx + moveX));
               const targetY = Math.max(0, Math.min(height - 1, ny + moveY));
               const tidx = (targetY * width + targetX) * PARTICLE_STRIDE;
-              
+
               if (grid[tidx] === Material.Air) {
                 this.swapCells(nx, ny, targetX, targetY);
                 grid[tidx + 3] *= 0.85;
@@ -582,13 +603,13 @@ export class SimulationCanvas {
         }
       }
     }
-    
+
     // Hawking radiation
     if (Math.random() < 0.02) {
       const angle = Math.random() * Math.PI * 2;
       const ex = Math.round(x + Math.cos(angle) * (this.EVENT_HORIZON_RADIUS + 1));
       const ey = Math.round(y + Math.sin(angle) * (this.EVENT_HORIZON_RADIUS + 1));
-      
+
       if (this.inBounds(ex, ey)) {
         const eidx = (ey * width + ex) * PARTICLE_STRIDE;
         if (grid[eidx] === Material.Air) {
@@ -632,19 +653,18 @@ export class SimulationCanvas {
   // Optimized rendering with dirty rect tracking
   render(): void {
     const { width, height, scale, pixels, grid } = this;
-    
-    // FUL-45: Render parallax starfield background for space modes
-    this.renderStarfield();
-    
+
+    // Clear and draw particles (starfield will be rendered at end)
+
     const bg = MATERIAL_COLORS[Material.Air];
-    
+
     // Clear entire canvas (background)
     const canvasW = this.canvasWidth;
     const canvasH = this.canvasHeight;
     for (let i = 0; i < pixels.length; i += 4) {
       const py = Math.floor((i / 4) / canvasW);
       const px = (i / 4) % canvasW;
-      
+
       // Only clear if pixel is in a dirty rect
       let inDirty = false;
       for (const rect of this.dirtyRects) {
@@ -653,11 +673,11 @@ export class SimulationCanvas {
           break;
         }
       }
-      if (!inDirty && py < this.currentDirty.y + this.currentDirty.h && 
+      if (!inDirty && py < this.currentDirty.y + this.currentDirty.h &&
           py >= this.currentDirty.y && px >= this.currentDirty.x && px < this.currentDirty.x + this.currentDirty.w) {
         inDirty = true;
       }
-      
+
       if (inDirty) {
         pixels[i] = bg[0];
         pixels[i + 1] = bg[1];
@@ -668,7 +688,7 @@ export class SimulationCanvas {
 
     // Draw particles (only dirty regions)
     this.flushDirty();
-    
+
     for (const rect of this.dirtyRects) {
       const startX = Math.floor(rect.x / scale);
       const startY = Math.floor(rect.y / scale);
@@ -679,7 +699,7 @@ export class SimulationCanvas {
         for (let x = startX; x < endX; x++) {
           const idx = (y * width + x) * PARTICLE_STRIDE;
           const material = grid[idx];
-          
+
           if (material === Material.Air) continue;
 
           const color = MATERIAL_COLORS[material];
@@ -721,7 +741,7 @@ export class SimulationCanvas {
           // Fill scaled block
           const px0 = x * scale;
           const py0 = y * scale;
-          
+
           for (let dy = 0; dy < scale; dy++) {
             for (let dx = 0; dx < scale; dx++) {
               const pi = ((py0 + dy) * canvasW + (px0 + dx)) * 4;
@@ -743,10 +763,22 @@ export class SimulationCanvas {
 
     // FUL-35c: Render spacecraft on top of particles
     this.renderSpacecraft();
-    
+
+    // FUL-47.3: Render black hole visual effects
+    this.renderBlackHoleVisual();
+
+    // FUL-47: Re-render starfield on top so stars are visible
+    this.renderStarfield();
+
     // FUL-45: Render gravity gun effect
     if (this.gravityGunState) {
       renderGravityGunEffect(this.ctx, this.gravityGunState, this.scale);
+    }
+
+    // FUL-47.2: Render debris objects
+    if (this.debrisManager) {
+      const debris = this.debrisManager.getActiveDebris();
+      renderDebris(this.ctx, debris, this.scale);
     }
   }
 
@@ -762,6 +794,75 @@ export class SimulationCanvas {
     // Render player ship on top
     if (this.spacecraftState.playerShip) {
       this.spacecraftRenderer.render(this.spacecraftState.playerShip, this.scale);
+    }
+  }
+
+  // FUL-47.3: Render black hole visual effects (accretion disk, event horizon glow)
+  private renderBlackHoleVisual(): void {
+    if (this.blackHoles.length === 0) return;
+
+    const time = Date.now() * 0.002; // Animation time for pulsing effects
+
+    for (const bh of this.blackHoles) {
+      const cx = bh.x * this.scale + this.scale / 2;
+      const cy = bh.y * this.scale + this.scale / 2;
+      const pixelRadius = this.EVENT_HORIZON_RADIUS * this.scale;
+      
+      // Draw accretion disk glow (outer glow)
+      const glowRadius = pixelRadius * 2.5;
+      const gradient = this.ctx.createRadialGradient(cx, cy, pixelRadius, cx, cy, glowRadius);
+      gradient.addColorStop(0, 'rgba(255, 100, 200, 0.6)');
+      gradient.addColorStop(0.3, 'rgba(200, 50, 150, 0.4)');
+      gradient.addColorStop(0.6, 'rgba(100, 30, 100, 0.2)');
+      gradient.addColorStop(1, 'rgba(50, 0, 50, 0)');
+      
+      this.ctx.beginPath();
+      this.ctx.arc(cx, cy, glowRadius, 0, Math.PI * 2);
+      this.ctx.fillStyle = gradient;
+      this.ctx.fill();
+      
+      // Draw spinning accretion disk ring
+      const diskRadius = pixelRadius * 2;
+      const diskThickness = pixelRadius * 0.6;
+      
+      this.ctx.save();
+      this.ctx.translate(cx, cy);
+      this.ctx.rotate(time * 0.5); // Rotate the disk
+      
+      // Pink/magenta pulsing disk
+      const pulse = 0.7 + Math.sin(time * 2) * 0.3;
+      this.ctx.strokeStyle = `rgba(255, 100, 200, ${pulse * 0.8})`;
+      this.ctx.lineWidth = diskThickness;
+      this.ctx.beginPath();
+      this.ctx.ellipse(0, 0, diskRadius, diskRadius * 0.3, 0, 0, Math.PI * 2);
+      this.ctx.stroke();
+      
+      // Inner hot ring
+      this.ctx.strokeStyle = `rgba(255, 200, 255, ${pulse * 0.5})`;
+      this.ctx.lineWidth = diskThickness * 0.4;
+      this.ctx.beginPath();
+      this.ctx.ellipse(0, 0, diskRadius * 0.8, diskRadius * 0.2, 0, 0, Math.PI * 2);
+      this.ctx.stroke();
+      
+      this.ctx.restore();
+      
+      // Draw event horizon (dark center with subtle edge glow)
+      const horizonGradient = this.ctx.createRadialGradient(cx, cy, 0, cx, cy, pixelRadius * 1.2);
+      horizonGradient.addColorStop(0, 'rgba(0, 0, 0, 1)');
+      horizonGradient.addColorStop(0.7, 'rgba(0, 0, 0, 1)');
+      horizonGradient.addColorStop(1, 'rgba(30, 0, 40, 0.5)');
+      
+      this.ctx.beginPath();
+      this.ctx.arc(cx, cy, pixelRadius * 1.2, 0, Math.PI * 2);
+      this.ctx.fillStyle = horizonGradient;
+      this.ctx.fill();
+      
+      // Add photon ring highlight
+      this.ctx.strokeStyle = `rgba(255, 255, 255, ${0.3 + Math.sin(time * 3) * 0.1})`;
+      this.ctx.lineWidth = 2;
+      this.ctx.beginPath();
+      this.ctx.arc(cx, cy, pixelRadius * 0.95, 0, Math.PI * 2);
+      this.ctx.stroke();
     }
   }
 
@@ -801,7 +902,7 @@ export class SimulationCanvas {
 
     return count;
   }
-  
+
   getStats(): { particlesConsumed: number; totalMass: number; blackHoles: number } {
     return {
       particlesConsumed: this.stats.particlesConsumed,
@@ -809,38 +910,38 @@ export class SimulationCanvas {
       blackHoles: this.blackHoles.length
     };
   }
-  
+
   setOverlayMode(mode: OverlayMode): void {
     this.overlayMode = mode;
   }
-  
+
   getOverlayMode(): OverlayMode {
     return this.overlayMode;
   }
-  
+
   getMaterialAt(x: number, y: number): Material | null {
     const gridX = Math.floor(x / this.scale);
     const gridY = Math.floor(y / this.scale);
     const mat = this.getMaterial(gridX, gridY);
     return mat >= 0 ? mat : null;
   }
-  
+
   getVelocityAt(x: number, y: number): { vx: number; vy: number } {
     const gridX = Math.floor(x / this.scale);
     const gridY = Math.floor(y / this.scale);
     const idx = (gridY * this.width + gridX) * PARTICLE_STRIDE;
     return { vx: this.grid[idx + 3], vy: this.grid[idx + 4] };
   }
-  
+
   resetStats(): void {
-    this.stats = { particlesConsumed: 0, totalMass: 0 };
+    this.stats = { particlesConsumed: 0, totalMass: 0, debrisCollected: 0 };
     this.blackHoles = [];
   }
-  
+
   spawnStructure(type: 'ship' | 'asteroid' | 'station', centerX: number, centerY: number): void {
     const gridCX = Math.floor(centerX / this.scale);
     const gridCY = Math.floor(centerY / this.scale);
-    
+
     switch (type) {
       case 'ship':
         for (let dy = 0; dy < 8; dy++) {
@@ -852,7 +953,7 @@ export class SimulationCanvas {
           this.spawn(gridCX, gridCY + 8 + i, Material.Fire);
         }
         break;
-        
+
       case 'asteroid':
         for (let angle = 0; angle < Math.PI * 2; angle += 0.3) {
           const radius = 5 + Math.random() * 3;
@@ -868,7 +969,7 @@ export class SimulationCanvas {
           }
         }
         break;
-        
+
       case 'station':
         for (let r = 0; r < 5; r++) {
           for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 3) {
@@ -916,10 +1017,18 @@ export class SimulationCanvas {
       }
     );
 
-    // Setup keyboard controls
-    if (this.spacecraftState.control) {
-      this.spacecraftState.cleanupControls = setupKeyboardControls(this.spacecraftState.control);
-    }
+    // NOTE: Keyboard controls are managed by App.tsx via getSpacecraftControl()
+    // This allows App.tsx to route WASD through the React event system
+
+    // FUL-47.2: Initialize debris manager
+    this.debrisManager = new DebrisManager(this.canvasWidth, this.canvasHeight);
+    this.debrisManager.onDebrisCollected = (debris, points) => {
+      if (this.onDebrisCollected) {
+        this.onDebrisCollected(debris, points);
+      }
+    };
+    // Spawn initial debris field
+    this.debrisManager.spawnInitialField(5);
 
     this.spacecraftState.isActive = true;
   }
@@ -928,15 +1037,17 @@ export class SimulationCanvas {
   deactivateSpacecraftMode(): void {
     if (!this.spacecraftState.isActive) return;
 
-    // Cleanup keyboard controls
-    if (this.spacecraftState.cleanupControls) {
-      this.spacecraftState.cleanupControls();
-      this.spacecraftState.cleanupControls = null;
-    }
-
+    // Control cleanup is handled by React unmount in App.tsx
     this.spacecraftState.control = null;
     this.spacecraftState.playerShip = null;
     this.spacecraftState.enemyShips = [];
+
+    // FUL-47.2: Cleanup debris manager
+    if (this.debrisManager) {
+      this.debrisManager.clear();
+      this.debrisManager = null;
+    }
+
     this.spacecraftState.isActive = false;
   }
 
@@ -973,7 +1084,14 @@ export class SimulationCanvas {
 
     // Update player ship physics
     this.spacecraftState.control.tick(deltaTime);
-
+    
+    // FUL-47.2: Check debris collection by player ship
+    if (this.spacecraftState.playerShip && this.debrisManager) {
+      const player = this.spacecraftState.playerShip;
+      if (!player.isDestroyed) {
+        this.debrisManager.checkCollection(player.position.x, player.position.y, 15);
+      }
+    }
     // Update enemy ships (simple AI)
     for (const enemy of this.spacecraftState.enemyShips) {
       if (enemy.isDestroyed) continue;

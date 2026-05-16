@@ -17,6 +17,8 @@ export interface GravityGunState {
   cursorY: number;
   strength: number;
   radius: number;
+  shipX?: number;
+  shipY?: number;
 }
 
 export const DEFAULT_GUN_CONFIG: GravityGunConfig = {
@@ -112,6 +114,8 @@ export function applyGravityGun(
 }
 
 // Render gravity gun visual effect
+// FUL-47.4: Added beam from ship to cursor
+// FUL-47.4: Added particle effects in beam path
 export function renderGravityGunEffect(
   ctx: CanvasRenderingContext2D,
   state: GravityGunState,
@@ -119,7 +123,56 @@ export function renderGravityGunEffect(
 ): void {
   if (!state.active) return;
 
-  const { cursorX, cursorY, mode, radius } = state;
+  const { cursorX, cursorY, mode, radius, shipX, shipY } = state;
+  
+  // Draw beam from ship to cursor if ship position is available
+  if (shipX !== undefined && shipY !== undefined) {
+    const beamLength = Math.sqrt((cursorX - shipX) ** 2 + (cursorY - shipY) ** 2);
+    const beamAngle = Math.atan2(cursorY - shipY, cursorX - shipX);
+    
+    // Beam colors by mode
+    const beamColor = mode === 'attract' ? { r: 100, g: 200, b: 255 } :
+                      mode === 'repel' ? { r: 255, g: 100, b: 100 } :
+                      { r: 150, g: 100, b: 255 };
+    
+    // Draw main beam (cone from ship)
+    const beamWidth = 15; // Base width
+    const gradient = ctx.createLinearGradient(shipX, shipY, cursorX, cursorY);
+    gradient.addColorStop(0, `rgba(${beamColor.r}, ${beamColor.g}, ${beamColor.b}, 0.8)`);
+    gradient.addColorStop(0.3, `rgba(${beamColor.r}, ${beamColor.g}, ${beamColor.b}, 0.5)`);
+    gradient.addColorStop(1, `rgba(${beamColor.r}, ${beamColor.g}, ${beamColor.b}, 0.1)`);
+    
+    // Draw tapered beam shape
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(shipX, shipY);
+    
+    // Calculate perpendicular for beam width
+    const perpX = Math.sin(beamAngle) * beamWidth;
+    const perpY = -Math.cos(beamAngle) * beamWidth;
+    
+    ctx.lineTo(cursorX + perpX, cursorY + perpY);
+    ctx.lineTo(cursorX - perpX, cursorY - perpY);
+    ctx.closePath();
+    ctx.fillStyle = gradient;
+    ctx.fill();
+    ctx.restore();
+    
+    // Draw particle effects along beam
+    const particleCount = 8;
+    for (let i = 0; i < particleCount; i++) {
+      const t = Math.random();
+      const px = shipX + (cursorX - shipX) * t + (Math.random() - 0.5) * 10;
+      const py = shipY + (cursorY - shipY) * t + (Math.random() - 0.5) * 10;
+      const size = 2 + Math.random() * 3;
+      const alpha = (1 - t) * 0.6;
+      
+      ctx.fillStyle = `rgba(${beamColor.r}, ${beamColor.g}, ${beamColor.b}, ${alpha})`;
+      ctx.beginPath();
+      ctx.arc(px, py, size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
 
   // Draw affected radius
   ctx.beginPath();
