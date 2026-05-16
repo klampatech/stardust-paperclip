@@ -2,11 +2,14 @@
 // Performance optimizations: typed arrays, DOM caching, dirty rects
 // Target: 30%+ improvement over current implementation
 // FUL-35c: Added spacecraft control support
+// FUL-45: Added gravity gun integration
 
 import { Material, MATERIALS } from './materials';
 import { Spacecraft, ShipClass, createSpacecraft, SHIP_CLASS_INFO } from './spacecraft';
 import { SpacecraftControl, setupKeyboardControls, generateSpacecraftId } from './spacecraftControl';
 import { SpacecraftRenderer } from './spacecraftRenderer';
+import { GravityGunState } from './gravityGun';
+import { renderGravityGunEffect } from './gravityGun';
 
 // Material colors from Rust implementation
 const MATERIAL_COLORS: [number, number, number][] = [
@@ -122,6 +125,14 @@ export class SimulationCanvas {
   };
   private spacecraftRenderer: SpacecraftRenderer | null = null;
   
+  // FUL-45: Gravity gun state for interactive particle manipulation
+  public gravityGunState: GravityGunState | null = null;
+  
+  // FUL-45: Parallax starfield for space game
+  private starLayers: Array<{ x: number; y: number; size: number; brightness: number; parallax: number }> = [];
+  private starLayerCount = 3;
+  private starsPerLayer = 80;
+
   // Black hole constants (matching Rust)
   private readonly BLACK_HOLE_MASS = 200;
   private readonly EVENT_HORIZON_RADIUS = 4;
@@ -156,6 +167,73 @@ export class SimulationCanvas {
     // Initialize image data
     this.imageData = this.ctx.createImageData(this.canvasWidth, this.canvasHeight);
     this.pixels = this.imageData.data;
+    
+    // FUL-45: Initialize parallax starfield
+    this.initStarfield();
+  }
+  
+  private initStarfield(): void {
+    this.starLayers = [];
+    for (let layer = 0; layer < this.starLayerCount; layer++) {
+      const parallax = 0.1 + layer * 0.15; // 0.1, 0.25, 0.4
+      const count = this.starsPerLayer - layer * 15; // Fewer stars in foreground
+      const sizeRange = 1 + layer * 0.5; // Larger stars in front
+      
+      for (let i = 0; i < count; i++) {
+        this.starLayers.push({
+          x: Math.random() * this.canvasWidth * 2 - this.canvasWidth * 0.5,
+          y: Math.random() * this.canvasHeight * 2 - this.canvasHeight * 0.5,
+          size: 0.5 + Math.random() * sizeRange,
+          brightness: 0.3 + Math.random() * 0.7,
+          parallax,
+        });
+      }
+    }
+  }
+  
+  private renderStarfield(): void {
+    // Use player ship or black hole position as parallax anchor
+    let anchorX = this.canvasWidth / 2;
+    let anchorY = this.canvasHeight / 2;
+    
+    if (this.spacecraftState.playerShip) {
+      anchorX = this.spacecraftState.playerShip.position.x;
+      anchorY = this.spacecraftState.playerShip.position.y;
+    } else if (this.blackHoles.length > 0) {
+      anchorX = this.blackHoles[0].x;
+      anchorY = this.blackHoles[0].y;
+    }
+    
+    const offsetX = anchorX - this.canvasWidth / 2;
+    const offsetY = anchorY - this.canvasHeight / 2;
+    
+    for (const star of this.starLayers) {
+      // Apply parallax offset
+      const sx = star.x - offsetX * star.parallax;
+      const sy = star.y - offsetY * star.parallax;
+      
+      // Wrap stars around screen
+      const wx = ((sx % this.canvasWidth) + this.canvasWidth) % this.canvasWidth;
+      const wy = ((sy % this.canvasHeight) + this.canvasHeight) % this.canvasHeight;
+      
+      // Draw star with size-based brightness
+      const baseAlpha = Math.floor(star.brightness * 200);
+      const size = Math.max(1, Math.round(star.size));
+      
+      // Simple circle star
+      this.ctx.fillStyle = `rgba(255, 255, 255, ${baseAlpha / 255})`;
+      this.ctx.beginPath();
+      this.ctx.arc(wx, wy, size * 0.5, 0, Math.PI * 2);
+      this.ctx.fill();
+      
+      // Add glow for larger stars
+      if (size > 1.5) {
+        this.ctx.fillStyle = `rgba(200, 220, 255, ${(baseAlpha / 255) * 0.3})`;
+        this.ctx.beginPath();
+        this.ctx.arc(wx, wy, size, 0, Math.PI * 2);
+        this.ctx.fill();
+      }
+    }
   }
 
   private initGrid(): void {
@@ -554,6 +632,10 @@ export class SimulationCanvas {
   // Optimized rendering with dirty rect tracking
   render(): void {
     const { width, height, scale, pixels, grid } = this;
+    
+    // FUL-45: Render parallax starfield background for space modes
+    this.renderStarfield();
+    
     const bg = MATERIAL_COLORS[Material.Air];
     
     // Clear entire canvas (background)
@@ -661,6 +743,11 @@ export class SimulationCanvas {
 
     // FUL-35c: Render spacecraft on top of particles
     this.renderSpacecraft();
+    
+    // FUL-45: Render gravity gun effect
+    if (this.gravityGunState) {
+      renderGravityGunEffect(this.ctx, this.gravityGunState, this.scale);
+    }
   }
 
   // FUL-35c: Render all spacecraft
