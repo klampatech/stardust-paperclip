@@ -10,7 +10,16 @@ import { SpacecraftControl, setupKeyboardControls, generateSpacecraftId } from '
 import { SpacecraftRenderer } from './spacecraftRenderer';
 import { GravityGunState } from './gravityGun';
 import { renderGravityGunEffect } from './gravityGun';
-import { DebrisManager } from './debrisManager';
+// FUL-47.2: Object Spawning System imports
+import { ObjectSpawner, renderObjects, DEFAULT_SPAWN_TYPES } from './debrisManager';
+import type { SpawnConfig, SpawnableObjectType } from './debrisManager';
+
+// FUL-47.2: Re-export types
+import type { SpaceObject } from './debrisManager';
+import type { ObjectType } from './debrisManager';
+export type { SpaceObject, ObjectType };
+export { ObjectSpawner as DebrisManager, renderObjects, DEFAULT_SPAWN_TYPES };
+export type { SpawnConfig, SpawnableObjectType };
 
 // Material colors from Rust implementation
 const MATERIAL_COLORS: [number, number, number][] = [
@@ -129,16 +138,16 @@ export class SimulationCanvas {
   // FUL-45: Gravity gun state for interactive particle manipulation
   public gravityGunState: GravityGunState | null = null;
 
-  // FUL-47.2: Callback for debris collection events
-  public onDebrisCollected?: (debris: import('./debrisManager').DebrisObject, points: number) => void;
+  // FUL-47.2: Callback for object collection events
+  public onObjectCollected?: (obj: SpaceObject, points: number) => void;
 
   // FUL-45: Parallax starfield for space game
   private starLayers: Array<{ x: number; y: number; size: number; brightness: number; parallax: number }> = [];
   private starLayerCount = 3;
   private starsPerLayer = 80;
 
-  // FUL-47.2: Debris manager for collectible objects
-  private debrisManager: DebrisManager | null = null;
+  // FUL-47.2: Object spawner for collectible space objects (asteroids, ships, planets)
+  private objectSpawner: ObjectSpawner | null = null;
 
   // Black hole constants (matching Rust)
   private readonly BLACK_HOLE_MASS = 200;
@@ -178,14 +187,21 @@ export class SimulationCanvas {
     // FUL-45: Initialize parallax starfield
     this.initStarfield();
 
-    // FUL-47.2: Initialize debris manager
-    this.debrisManager = new DebrisManager(this.canvasWidth, this.canvasHeight);
-
-    // Setup debris collection callback
-    this.debrisManager.onDebrisCollected = (debris, points) => {
+    // FUL-47.2: Initialize object spawner for collectible space objects
+    this.objectSpawner = new ObjectSpawner(this.canvasWidth, this.canvasHeight);
+    
+    // Setup object collection callback
+    this.objectSpawner.onObjectCollected = (obj, points) => {
       this.stats.debrisCollected += 1;
-      this.stats.totalMass += debris.size * 0.5;
+      this.stats.totalMass += obj.size * 0.5;
+      // Propagate to external callback
+      if (this.onObjectCollected) {
+        this.onObjectCollected(obj, points);
+      }
     };
+    
+    // FUL-47.2: Set black hole position for attraction physics (if exists)
+    // Will be updated each frame in the render loop if black holes exist
   }
 
   private initStarfield(): void {
@@ -493,9 +509,9 @@ export class SimulationCanvas {
     // FUL-35c: Update spacecraft physics
     this.updateSpacecraft();
 
-    // FUL-47.2: Update debris physics and spawning
-    if (this.debrisManager) {
-      this.debrisManager.tick();
+    // FUL-47.2: Update space objects physics, spawning, and black hole attraction
+    if (this.objectSpawner) {
+      this.objectSpawner.tick(deltaTime);
     }
   }
 
@@ -775,10 +791,18 @@ export class SimulationCanvas {
       renderGravityGunEffect(this.ctx, this.gravityGunState, this.scale);
     }
 
-    // FUL-47.2: Render debris objects
-    if (this.debrisManager) {
-      const debris = this.debrisManager.getActiveDebris();
-      renderDebris(this.ctx, debris, this.scale);
+    // FUL-47.2: Update black hole position for object attraction
+    if (this.blackHoles.length > 0 && this.objectSpawner) {
+      this.objectSpawner.setBlackHolePosition(
+        this.blackHoles[0].x * this.scale,
+        this.blackHoles[0].y * this.scale
+      );
+    }
+    
+    // FUL-47.2: Render space objects (asteroids, ships, planets, neutron stars)
+    if (this.objectSpawner) {
+      const objects = this.objectSpawner.getActiveObjects();
+      renderObjects(this.ctx, objects, this.scale);
     }
   }
 
@@ -1020,15 +1044,22 @@ export class SimulationCanvas {
     // NOTE: Keyboard controls are managed by App.tsx via getSpacecraftControl()
     // This allows App.tsx to route WASD through the React event system
 
-    // FUL-47.2: Initialize debris manager
-    this.debrisManager = new DebrisManager(this.canvasWidth, this.canvasHeight);
-    this.debrisManager.onDebrisCollected = (debris, points) => {
-      if (this.onDebrisCollected) {
-        this.onDebrisCollected(debris, points);
+    // FUL-47.2: Initialize object spawner for collectible space objects
+    this.objectSpawner = new ObjectSpawner(this.canvasWidth, this.canvasHeight);
+    this.objectSpawner.onObjectCollected = (obj, points) => {
+      if (this.onObjectCollected) {
+        this.onObjectCollected(obj, points);
       }
     };
-    // Spawn initial debris field
-    this.debrisManager.spawnInitialField(5);
+    // FUL-47.2: Set black hole position if exists
+    if (this.blackHoles.length > 0) {
+      this.objectSpawner.setBlackHolePosition(
+        this.blackHoles[0].x * this.scale,
+        this.blackHoles[0].y * this.scale
+      );
+    }
+    // Spawn initial object field
+    this.objectSpawner.spawnInitialField(8);
 
     this.spacecraftState.isActive = true;
   }
@@ -1042,10 +1073,10 @@ export class SimulationCanvas {
     this.spacecraftState.playerShip = null;
     this.spacecraftState.enemyShips = [];
 
-    // FUL-47.2: Cleanup debris manager
-    if (this.debrisManager) {
-      this.debrisManager.clear();
-      this.debrisManager = null;
+    // FUL-47.2: Cleanup object spawner
+    if (this.objectSpawner) {
+      this.objectSpawner.clear();
+      this.objectSpawner = null;
     }
 
     this.spacecraftState.isActive = false;
@@ -1085,11 +1116,11 @@ export class SimulationCanvas {
     // Update player ship physics
     this.spacecraftState.control.tick(deltaTime);
     
-    // FUL-47.2: Check debris collection by player ship
-    if (this.spacecraftState.playerShip && this.debrisManager) {
+    // FUL-47.2: Check object collection by player ship (asteroids, ships, planets, etc.)
+    if (this.spacecraftState.playerShip && this.objectSpawner) {
       const player = this.spacecraftState.playerShip;
       if (!player.isDestroyed) {
-        this.debrisManager.checkCollection(player.position.x, player.position.y, 15);
+        this.objectSpawner.checkCollection(player.position.x, player.position.y, 15);
       }
     }
     // Update enemy ships (simple AI)

@@ -63,9 +63,9 @@ export default function App() {
     const canvas = canvasRef.current;
     simulationRef.current = new SimulationCanvas(canvas, GRID_WIDTH, GRID_HEIGHT, SCALE);
 
-    // FUL-47.2: Setup debris collection callback
+    // FUL-47.2: Setup object collection callback
     if (simulationRef.current) {
-      simulationRef.current.onDebrisCollected = (debris, points) => {
+      simulationRef.current.onObjectCollected = (obj, points) => {
         setSessionScore(prev => collectDebrisScore(prev));
         setAvailablePoints(prev => prev + points);
       };
@@ -224,9 +224,9 @@ export default function App() {
       const debrisMgr = (sim as any).debrisManager;
       if (debrisMgr) {
         debrisMgr.spawnInitialField(8);
-        // Setup collection callback to update score
-        debrisMgr.onDebrisCollected = (debris: { material: string; size: number }, points: number) => {
-          setSessionScore(prev => consumeParticleScore(prev, debris.material as 'particle'));
+        // FUL-47.2: Setup collection callback to update score
+        debrisMgr.onObjectCollected = (obj: { material: string; size: number }, points: number) => {
+          setSessionScore(prev => consumeParticleScore(prev, obj.material as 'particle'));
           setAvailablePoints(prev => prev + points);
         };
       }
